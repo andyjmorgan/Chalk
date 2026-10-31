@@ -46,7 +46,11 @@ public sealed record Principal(string UserId, string Display, bool Read, bool Wr
 }
 
 public sealed record SearchConfig(string[] Fields);
-public sealed record EmbedConfig(string[] Fields, string Model, int Dims);
+public sealed record EmbedConfig(string[] Fields, string Model, int Dims, double MinScore = EmbedConfig.DefaultMinScore)
+{
+    /// <summary>Cosine similarity floor for vector hits. Unrelated text scores ~0.45-0.56 with qwen3-embedding; real matches 0.65+.</summary>
+    public const double DefaultMinScore = 0.6;
+}
 
 public sealed record BoardDef(
     Guid Id, string OwnerId, string Name, string Description, string SchemaJson, string[] KeyPointers,

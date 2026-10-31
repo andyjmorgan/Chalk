@@ -157,11 +157,11 @@ public static class RestEndpoints
             return Ok(rows, null, new { board = b.Name, since = sinceT, prefix = prefix ?? "", counts, asOf = DateTimeOffset.UtcNow });
         });
 
-        api.MapGet("/boards/{board}/search", async (HttpContext ctx, Store store, Embedder embedder, string board, string q, string? prefix, [FromQuery(Name = "filter")] string[]? filter, string? since, int? limit, CancellationToken ct) =>
+        api.MapGet("/boards/{board}/search", async (HttpContext ctx, Store store, Embedder embedder, string board, string q, string? prefix, [FromQuery(Name = "filter")] string[]? filter, string? since, int? limit, double? minScore, CancellationToken ct) =>
         {
             var p = ctx.Principal();
             var b = await store.GetBoardAsync(p, board, ct);
-            var (rows, mode) = await store.SearchAsync(p, b, q, prefix, filter, since is null ? null : ParseTime(since, "since"), limit ?? 20, embedder, ct);
+            var (rows, mode) = await store.SearchAsync(p, b, q, prefix, filter, since is null ? null : ParseTime(since, "since"), limit ?? 20, embedder, ct, minScore);
             return Ok(rows.Select(Envelope), null, new { board = b.Name, mode, total = rows.Count });
         });
 

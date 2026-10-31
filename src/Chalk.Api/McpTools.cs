@@ -133,11 +133,12 @@ public sealed class ChalkTools(Store store, Embedder embedder, IHttpContextAcces
         [Description("Key prefix to scope to.")] string? prefix = null,
         [Description("Equality filters like '/status=warn'.")] string[]? filter = null,
         [Description("Max results, default 20.")] int? limit = null,
+        [Description("Cosine similarity floor for vector hits (0-1). Defaults to the board's embed.minScore, 0.6. Lower to widen, raise to tighten.")] double? minScore = null,
         CancellationToken ct = default)
     => Run<object>(async () =>
     {
         var b = await store.GetBoardAsync(P, board, ct);
-        var (rows, mode) = await store.SearchAsync(P, b, query, prefix, filter, null, limit ?? 20, embedder, ct);
+        var (rows, mode) = await store.SearchAsync(P, b, query, prefix, filter, null, limit ?? 20, embedder, ct, minScore);
         return new { mode, results = rows.Select(RestEndpoints.Envelope) };
     });
 

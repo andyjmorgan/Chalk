@@ -155,7 +155,8 @@ public sealed class Store(NpgsqlDataSource db, ILogger<Store> log)
             new SearchConfig(search["fields"] is JsonArray sf ? sf.Select(x => x!.GetValue<string>()).ToArray() : []),
             embedJson is null ? null : new EmbedConfig(
                 embedJson["fields"] is JsonArray ef ? ef.Select(x => x!.GetValue<string>()).ToArray() : [],
-                embedJson["model"]?.GetValue<string>() ?? "", embedJson["dims"]?.GetValue<int>() ?? 512),
+                embedJson["model"]?.GetValue<string>() ?? "", embedJson["dims"]?.GetValue<int>() ?? 512,
+                embedJson["minScore"]?.GetValue<double>() ?? EmbedConfig.DefaultMinScore),
             r.GetInt32(10), r.GetInt64(11), r.GetFieldValue<DateTime>(12), r.GetFieldValue<DateTime>(13));
     }
 
@@ -196,7 +197,9 @@ public sealed class Store(NpgsqlDataSource db, ILogger<Store> log)
         {
             var fields = eo["fields"] is JsonArray fa ? fa.Select(x => x!.GetValue<string>()).ToArray() : [];
             if (fields.Length == 0) throw ChalkException.BadRequest("embed.fields must list at least one pointer");
-            embedCfg = new EmbedConfig(fields, eo["model"]?.GetValue<string>() ?? Embedder.DefaultModel, 512);
+            var minScore = eo["minScore"]?.GetValue<double>() ?? EmbedConfig.DefaultMinScore;
+            if (minScore < 0 || minScore > 1) throw ChalkException.BadRequest("embed.minScore must be between 0 and 1");
+            embedCfg = new EmbedConfig(fields, eo["model"]?.GetValue<string>() ?? Embedder.DefaultModel, 512, minScore);
         }
         var mvb = maxValueBytes ?? 65536;
         if (mvb < 1024 || mvb > 1048576) throw ChalkException.BadRequest("maxValueBytes must be between 1 KB and 1 MB");
@@ -218,7 +221,7 @@ public sealed class Store(NpgsqlDataSource db, ILogger<Store> log)
             cmd.Parameters.Add(new NpgsqlParameter("ttl", NpgsqlDbType.Interval) { Value = ttlSpan.HasValue ? ttlSpan.Value : DBNull.Value });
             cmd.Parameters.AddWithValue("mr", maxRevisions ?? 50);
             cmd.Parameters.Add(new NpgsqlParameter("search", NpgsqlDbType.Jsonb) { Value = JsonSerializer.Serialize(new { fields = searchFields ?? [] }) });
-            cmd.Parameters.Add(new NpgsqlParameter("embed", NpgsqlDbType.Jsonb) { Value = embedCfg is null ? DBNull.Value : JsonSerializer.Serialize(new { fields = embedCfg.Fields, model = embedCfg.Model, dims = embedCfg.Dims }) });
+            cmd.Parameters.Add(new NpgsqlParameter("embed", NpgsqlDbType.Jsonb) { Value = embedCfg is null ? DBNull.Value : JsonSerializer.Serialize(new { fields = embedCfg.Fields, model = embedCfg.Model, dims = embedCfg.Dims, minScore = embedCfg.MinScore }) });
             cmd.Parameters.AddWithValue("mvb", mvb);
             if (await cmd.ExecuteNonQueryAsync(ct) == 1) await AuditAsync(conn, p.Display, "board.create", new { name }, ct);
         }
@@ -257,7 +260,7 @@ public sealed class Store(NpgsqlDataSource db, ILogger<Store> log)
                 lastWrite = lastWrite is null ? null : new { at = lastWrite, writer = r.IsDBNull(19) ? null : r.GetString(19) },
                 stale,
                 search = b.Search.Fields.Length == 0 ? null : new { fields = b.Search.Fields },
-                embed = b.Embed is null ? null : new { fields = b.Embed.Fields, model = b.Embed.Model, dims = b.Embed.Dims },
+                embed = b.Embed is null ? null : new { fields = b.Embed.Fields, model = b.Embed.Model, dims = b.Embed.Dims, minScore = b.Embed.MinScore },
             });
         }
         return list;
@@ -284,7 +287,7 @@ public sealed class Store(NpgsqlDataSource db, ILogger<Store> log)
             ttl = b.Ttl is null ? null : Durations.Format(b.Ttl.Value), maxRevisions = b.MaxRevisions,
             schema = JsonNode.Parse(b.SchemaJson),
             search = new { fields = b.Search.Fields },
-            embed = b.Embed is null ? null : new { fields = b.Embed.Fields, model = b.Embed.Model, dims = b.Embed.Dims },
+            embed = b.Embed is null ? null : new { fields = b.Embed.Fields, model = b.Embed.Model, dims = b.Embed.Dims, minScore = b.Embed.MinScore },
             counts = new { live = r.GetInt64(0), revisions = r.GetInt64(1), tombstoned = r.GetInt64(2), bytes = r.GetInt64(3) },
             maxValueBytes = b.MaxValueBytes, sizeCap = b.SizeCap, shares = Array.Empty<object>(),
             createdAt = b.CreatedAt, updatedAt = b.UpdatedAt,
@@ -627,9 +630,10 @@ public sealed class Store(NpgsqlDataSource db, ILogger<Store> log)
         return list;
     }
 
-    public async Task<(List<RecordRow> Rows, string Mode)> SearchAsync(Principal p, BoardDef b, string query, string? prefix, string[]? filter, DateTimeOffset? since, int limit, Embedder embedder, CancellationToken ct)
+    public async Task<(List<RecordRow> Rows, string Mode)> SearchAsync(Principal p, BoardDef b, string query, string? prefix, string[]? filter, DateTimeOffset? since, int limit, Embedder embedder, CancellationToken ct, double? minScore = null)
     {
         p.RequireRead();
+        if (minScore is < 0 or > 1) throw ChalkException.BadRequest("minScore must be between 0 and 1");
         if (string.IsNullOrWhiteSpace(query)) throw ChalkException.BadRequest("query is required");
         limit = Math.Clamp(limit <= 0 ? 20 : limit, 1, 100);
         var (fsql, fps) = BuildFilters(b, prefix, filter, since, null);
@@ -662,11 +666,12 @@ public sealed class Store(NpgsqlDataSource db, ILogger<Store> log)
             await using var cmd = new NpgsqlCommand($"""
                 SELECT {RecordCols}, (e.vector <=> @v::vector) AS dist
                 FROM embeddings e JOIN records r ON r.board_id = e.board_id AND r.key = e.key AND r.revision = e.revision
-                WHERE {LiveWhere}{fsql}
+                WHERE {LiveWhere}{fsql} AND (e.vector <=> @v::vector) <= @maxDist
                 ORDER BY e.vector <=> @v::vector LIMIT @lim
                 """, conn);
             cmd.Parameters.AddWithValue("b", b.Id);
             cmd.Parameters.AddWithValue("v", Embedder.ToLiteral(qv));
+            cmd.Parameters.AddWithValue("maxDist", 1 - (minScore ?? b.Embed.MinScore));
             cmd.Parameters.AddWithValue("lim", limit * 2);
             foreach (var pr in fps) cmd.Parameters.Add(pr.Clone());
             await using var r = await cmd.ExecuteReaderAsync(ct);
