@@ -68,18 +68,7 @@ using (var scope = app.Services.CreateScope())
 
 var log = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("Chalk");
 app.Use((ctx, next) => RestEndpoints.ErrorEnvelope(ctx, next, log));
-app.UseDefaultFiles();
-// The UI is a handful of small files behind Cloudflare: make the edge revalidate each time so a deploy shows up
-// immediately. index.html also carries ?v= on its asset links, so the browser cache turns over with every image.
 var uiVersion = typeof(Program).Assembly.GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "dev";
-app.UseStaticFiles(new StaticFileOptions
-{
-    OnPrepareResponse = ctx =>
-    {
-        var path = ctx.File.PhysicalPath ?? ctx.File.Name;
-        ctx.Context.Response.Headers.CacheControl = path.EndsWith(".svg", StringComparison.Ordinal) ? "public, max-age=86400" : "no-cache";
-    },
-});
 app.Use(async (ctx, next) =>
 {
     // Serve index.html ourselves so the asset links carry the build version.
@@ -92,6 +81,17 @@ app.Use(async (ctx, next) =>
         return;
     }
     await next();
+});
+app.UseDefaultFiles();
+// The UI is a handful of small files behind Cloudflare: make the edge revalidate each time so a deploy shows up
+// immediately. index.html also carries ?v= on its asset links, so the browser cache turns over with every image.
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = ctx =>
+    {
+        var path = ctx.File.PhysicalPath ?? ctx.File.Name;
+        ctx.Context.Response.Headers.CacheControl = path.EndsWith(".svg", StringComparison.Ordinal) ? "public, max-age=86400" : "no-cache";
+    },
 });
 app.UseAuthentication();
 app.UseAuthorization();
