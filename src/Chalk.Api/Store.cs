@@ -696,8 +696,10 @@ public sealed class Store(NpgsqlDataSource db, ILogger<Store> log)
             if (scores.TryGetValue(vec[i].Key, out var ex)) scores[vec[i].Key] = (ex.Score + s, ex.Row with { Similarity = vec[i].Similarity });
             else scores[vec[i].Key] = (s, vec[i]);
         }
+        // Normalise RRF so 1.0 = first in both lists; raw RRF tops out at 2/61 and reads as "0.03" for a perfect hit.
+        const double rrfMax = 2.0 / 61;
         var fused = scores.Values.OrderByDescending(x => x.Score).Take(limit)
-            .Select(x => x.Row with { Score = Math.Round(x.Score, 5) }).ToList();
+            .Select(x => x.Row with { Score = Math.Round(x.Score / rrfMax, 3) }).ToList();
         return (fused, "hybrid");
     }
 

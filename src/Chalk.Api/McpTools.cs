@@ -126,7 +126,7 @@ public sealed class ChalkTools(Store store, Embedder embedder, IHttpContextAcces
     });
 
     [McpServerTool(Name = "search", Title = "Search records", ReadOnly = true)]
-    [Description("Search current records. Full-text always; hybrid with vectors when the board embeds. Returns records with score (ordering), similarity (cosine 0-1 for vector hits), rank (full-text) and snippet. Near-duplicates come back scored for you to judge; Chalk never blocks a write because something similar exists.")]
+    [Description("Search current records. Full-text always; hybrid with vectors when the board embeds. Returns records with score (ordering, 0-1; in hybrid mode 1 = first in both the text and vector lists), similarity (cosine 0-1 for vector hits), rank (full-text) and snippet. Near-duplicates come back scored for you to judge; Chalk never blocks a write because something similar exists.")]
     public Task<object> Search(
         [Description("Board name.")] string board,
         [Description("Search text. Supports quoted phrases and -negation.")] string query,
