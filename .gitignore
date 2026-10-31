@@ -1,0 +1,6 @@
+bin/
+obj/
+*.user
+.vs/
+authorized_tokens.json
+publish/

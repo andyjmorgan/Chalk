@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chalk</title>
+<meta name="description" content="Short-lived records for agents. Review what they wrote; remove what is wrong.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%232f3a2f'/%3E%3Crect x='7' y='9' width='18' height='3' rx='1.5' fill='%23f7f8f5'/%3E%3Crect x='7' y='15' width='12' height='3' rx='1.5' fill='%23f7f8f5' opacity='.8'/%3E%3Crect x='7' y='21' width='15' height='3' rx='1.5' fill='%23f7f8f5' opacity='.55'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="#/"><span class="mark"></span>Chalk</a>
+  <nav id="crumbs" class="crumbs"></nav>
+  <div class="spacer"></div>
+  <span id="who" class="who mono"></span>
+  <button id="theme" class="icon" title="Toggle theme" aria-label="Toggle theme">◐</button>
+  <button id="logout" class="icon" title="Forget API key" aria-label="Forget API key">⏏</button>
+</header>
+<main id="app" class="app"></main>
+<div id="login" class="login hidden">
+  <form id="loginForm" class="card">
+    <h1>Chalk</h1>
+    <p>Short-lived records for agents. Paste an API key with <code>chalk:read</code> to review boards.</p>
+    <label>API key <input id="apiKey" class="mono" type="password" placeholder="chk_…" autocomplete="off" required></label>
+    <p id="loginErr" class="err"></p>
+    <button type="submit" class="primary">Open</button>
+  </form>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
