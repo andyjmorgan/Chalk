@@ -47,6 +47,8 @@ input:focus, select:focus { border-color: color-mix(in srgb, var(--accent) 65%, 
 .nav a:hover { background: var(--elev); color: var(--ink); }
 .nav a.on { background: var(--elev); color: var(--ink); }
 .nav a svg { width: 16px; height: 16px; flex: none; }
+.nav .mg { flex: none; width: 22px; height: 22px; margin: -3px -3px -3px -3px; border-radius: 6px; font: 600 10px/22px var(--mono, 'IBM Plex Mono', monospace); letter-spacing: .02em; text-align: center; background: color-mix(in srgb, currentColor 16%, transparent); }
+.shell.collapsed .nav .mg { width: 28px; height: 28px; line-height: 28px; font-size: 11.5px; margin: -4px 0; border-radius: 7px; }
 .nav a span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nav .c-accent { color: var(--accent); } .nav .c-warn { color: var(--warn); } .nav .c-plum { color: var(--plum); } .nav .c-info { color: var(--info); } .nav .c-ok { color: var(--success); } .nav .c-fail { color: var(--danger); }
 .nav .sep { display: none; margin: 0 8px; border-top: 1px solid var(--line); }

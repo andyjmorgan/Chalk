@@ -65,9 +65,12 @@
   const tints = ['c-accent', 'c-warn', 'c-plum', 'c-info', 'c-ok'];
   function renderNav(boards = []) {
     const item = (href, name, ic, tint) => h('a', { href, title: name, 'aria-label': name }, icon(ic, tint), h('span', {}, name));
+    // Boards get a two-letter monogram instead of a shared icon so the collapsed rail still tells them apart.
+    const monogram = (name) => { const w = name.split(/[^a-z0-9]+/i).filter(Boolean); return ((w.length > 1 ? w[0][0] + w[1][0] : name.slice(0, 2)) || '?').toUpperCase(); };
+    const boardItem = (href, name, tint) => h('a', { href, title: name, 'aria-label': name }, h('span', { class: `mg ${tint}`, 'aria-hidden': true }, monogram(name)), h('span', {}, name));
     const groups = [
       h('div', { class: 'group' }, item('#/', 'Overview', 'box', 'c-accent')),
-      boards.length ? h('div', { class: 'group' }, h('div', { class: 'sep', 'aria-hidden': true }), h('p', { class: 'glabel', 'aria-hidden': true }, 'Boards'), ...boards.map((b, i) => item(`#/b/${encodeURIComponent(b)}`, b, 'list', tints[i % tints.length]))) : null,
+      boards.length ? h('div', { class: 'group' }, h('div', { class: 'sep', 'aria-hidden': true }), h('p', { class: 'glabel', 'aria-hidden': true }, 'Boards'), ...boards.map((b, i) => boardItem(`#/b/${encodeURIComponent(b)}`, b, tints[i % tints.length]))) : null,
       h('div', { class: 'group' }, h('div', { class: 'sep', 'aria-hidden': true }), h('p', { class: 'glabel', 'aria-hidden': true }, 'Auth'), item('#/keys', 'API keys', 'key', 'c-ok')),
     ];
     $('#nav').replaceChildren(...groups.filter(Boolean));
