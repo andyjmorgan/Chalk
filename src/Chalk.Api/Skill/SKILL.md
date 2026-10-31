@@ -34,7 +34,7 @@ Do not write prose, summaries of what you did, or lessons learned. If a value wa
    you last ran, with `from`/`to` values. Expired and deleted entries carry the last value so you can report
    "X was failing yesterday and is gone now".
 2. **Dedup:** `get(board, keys[])` returns only the keys that still exist. Anything missing is new to you.
-3. **Near-duplicates:** `search(board, text, minScore?)` returns scored candidates (hybrid when the board embeds; vector hits below `embed.minScore`, default 0.6 cosine, are dropped). You judge;
+3. **Near-duplicates:** `search(board, text, minScore?)` returns scored candidates (hybrid when the board embeds; vector hits below `embed.minScore`, default 0.6 cosine, are dropped). Each result carries `similarity` (cosine) and/or `rank` (full-text) so you can judge;
    Chalk never refuses a write because something similar exists.
 4. **Write:** one `upsert(board, records[])` per run with every observation. Batches are atomic; one schema
    violation fails the call with the item index. Include `observedAt` when the observation time is not now.

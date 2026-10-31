@@ -67,7 +67,12 @@ public sealed record UpsertResult(string Key, int Revision, DateTimeOffset? Expi
 public sealed record RecordRow(string Key, JsonNode Value, int Revision, DateTimeOffset ObservedAt, DateTimeOffset WrittenAt, DateTimeOffset? ExpiresAt, string Writer)
 {
     public Dictionary<string, string>? Segments { get; init; }
+    /// <summary>Ordering score: ts_rank_cd for full-text, reciprocal-rank fusion for hybrid.</summary>
     public double? Score { get; init; }
+    /// <summary>Cosine similarity of the vector hit (0-1), when the board embeds and this record was a vector match.</summary>
+    public double? Similarity { get; init; }
+    /// <summary>Full-text rank (ts_rank_cd), when this record was a text match.</summary>
+    public double? Rank { get; init; }
     public string? Snippet { get; init; }
 }
 

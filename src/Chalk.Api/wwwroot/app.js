@@ -343,7 +343,7 @@
         ...keyCols.map((c) => h('td', { class: 'k mono' }, r.segments?.[c] ?? r.key)),
         ...enumCols.map((c) => { const v = r.value[c]; return h('td', {}, v != null ? [h('span', { class: `st ${esc(v)}` }), String(v)] : h('span', { class: 'muted' }, '—')); }),
         ...fieldCols.map((c) => h('td', { class: 'ell', title: typeof get(r.value, c) === 'string' ? get(r.value, c) : '' }, r.snippet && c === fieldCols[0] ? h('span', { html: r.snippet }) : cell(get(r.value, c)))),
-        query ? h('td', { class: 'num mono' }, r.score?.toFixed(3)) : null,
+        query ? h('td', { class: 'num mono', title: `fused ${r.score?.toFixed(4) ?? '—'}` }, scoreCell(r)) : null,
         h('td', {}, timeEl(r.observedAt)), h('td', {}, r.expiresAt ? timeEl(r.expiresAt, soon(r.expiresAt) ? 'soon' : '') : h('span', { class: 'muted' }, 'keep')),
         h('td', { class: 'num mono' }, r.revision), h('td', { class: 'mono muted' }, r.writer),
         h('td', { onclick: (e) => e.stopPropagation() }, deleteControl(`Delete ${r.key}`, async () => { await api(`/api/v1/boards/${encodeURIComponent(board)}/records/${encodeURIComponent(r.key)}`, { method: 'DELETE' }); tr.remove(); boardCache = {}; return 1; })));
@@ -354,6 +354,14 @@
     const pager = h('div', { class: 'pager' }, h('span', {}, query ? `${rows.length} results · ${meta.mode}` : `${rows.length} of ${meta.total} shown`),
       next ? h('button', { onclick: () => renderTable(el, board, def, { prefix, query, filters }, next) }, 'Next page →') : null);
     el.replaceChildren(...[tools, chips.children.length ? chips : null, rows.length ? table : h('div', { class: 'empty' }, query ? 'No matches.' : 'No live records here.'), pager].filter(Boolean));
+  }
+
+  // Search score cell: cosine similarity for vector hits, full-text rank for text hits, both when both matched.
+  function scoreCell(r) {
+    const parts = [];
+    if (r.similarity != null) parts.push(h('span', { class: 'sc', title: 'cosine similarity' }, 'sim ', h('b', {}, r.similarity.toFixed(2))));
+    if (r.rank != null) parts.push(h('span', { class: 'sc', title: 'full-text rank' }, 'text ', h('b', {}, r.rank.toFixed(2))));
+    return parts.length ? parts : (r.score?.toFixed(3) ?? '—');
   }
 
   // Inline two-step delete: button → "Delete N? [Yes] [No]". No browser dialogs.

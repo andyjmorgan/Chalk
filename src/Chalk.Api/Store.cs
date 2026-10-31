@@ -657,7 +657,7 @@ public sealed class Store(NpgsqlDataSource db, ILogger<Store> log)
         }
 
         if (b.Embed is null)
-            return (ft.Take(limit).Select(x => x.Row with { Score = Math.Round(x.Rank, 4), Snippet = x.Snippet }).ToList(), "fulltext");
+            return (ft.Take(limit).Select(x => x.Row with { Score = Math.Round(x.Rank, 4), Rank = Math.Round(x.Rank, 4), Snippet = x.Snippet }).ToList(), "fulltext");
 
         List<RecordRow> vec = [];
         try
@@ -675,29 +675,29 @@ public sealed class Store(NpgsqlDataSource db, ILogger<Store> log)
             cmd.Parameters.AddWithValue("lim", limit * 2);
             foreach (var pr in fps) cmd.Parameters.Add(pr.Clone());
             await using var r = await cmd.ExecuteReaderAsync(ct);
-            while (await r.ReadAsync(ct)) vec.Add(ReadRecord(r, b) with { Score = 1 - r.GetDouble(7) });
+            while (await r.ReadAsync(ct)) { var sim = Math.Round(1 - r.GetDouble(7), 3); vec.Add(ReadRecord(r, b) with { Score = sim, Similarity = sim }); }
         }
         catch (Exception e)
         {
             log.LogWarning(e, "Vector search failed for board {Board}; returning full-text only", b.Name);
-            return (ft.Take(limit).Select(x => x.Row with { Score = Math.Round(x.Rank, 4), Snippet = x.Snippet }).ToList(), "fulltext");
+            return (ft.Take(limit).Select(x => x.Row with { Score = Math.Round(x.Rank, 4), Rank = Math.Round(x.Rank, 4), Snippet = x.Snippet }).ToList(), "fulltext");
         }
 
         // Reciprocal rank fusion.
-        var scores = new Dictionary<string, (double Score, RecordRow Row, string? Snippet)>(StringComparer.Ordinal);
+        var scores = new Dictionary<string, (double Score, RecordRow Row)>(StringComparer.Ordinal);
         for (var i = 0; i < ft.Count; i++)
         {
             var s = 1.0 / (60 + i + 1);
-            scores[ft[i].Row.Key] = (s, ft[i].Row, ft[i].Snippet);
+            scores[ft[i].Row.Key] = (s, ft[i].Row with { Rank = Math.Round(ft[i].Rank, 4), Snippet = ft[i].Snippet });
         }
         for (var i = 0; i < vec.Count; i++)
         {
             var s = 1.0 / (60 + i + 1);
-            if (scores.TryGetValue(vec[i].Key, out var ex)) scores[vec[i].Key] = (ex.Score + s, ex.Row, ex.Snippet);
-            else scores[vec[i].Key] = (s, vec[i], null);
+            if (scores.TryGetValue(vec[i].Key, out var ex)) scores[vec[i].Key] = (ex.Score + s, ex.Row with { Similarity = vec[i].Similarity });
+            else scores[vec[i].Key] = (s, vec[i]);
         }
         var fused = scores.Values.OrderByDescending(x => x.Score).Take(limit)
-            .Select(x => x.Row with { Score = Math.Round(x.Score, 5), Snippet = x.Snippet }).ToList();
+            .Select(x => x.Row with { Score = Math.Round(x.Score, 5) }).ToList();
         return (fused, "hybrid");
     }
 

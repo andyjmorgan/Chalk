@@ -43,7 +43,7 @@ public static class RestEndpoints
     {
         key = r.Key, segments = r.Segments, value = r.Value, revision = r.Revision,
         observedAt = r.ObservedAt, writtenAt = r.WrittenAt, expiresAt = r.ExpiresAt, writer = r.Writer,
-        score = r.Score, snippet = r.Snippet,
+        score = r.Score, similarity = r.Similarity, rank = r.Rank, snippet = r.Snippet,
     };
 
     public static void MapChalkRest(this WebApplication app)
