@@ -348,7 +348,7 @@
     const table = h('div', { class: 'tblwrap' }, h('table', {}, h('thead', {}, head), body));
     const pager = h('div', { class: 'pager' }, h('span', {}, query ? `${rows.length} results · ${meta.mode}` : `${rows.length} of ${meta.total} shown`),
       next ? h('button', { onclick: () => renderTable(el, board, def, { prefix, query, filters }, next) }, 'Next page →') : null);
-    el.replaceChildren(tools, chips.children.length ? chips : null, rows.length ? table : h('div', { class: 'empty' }, query ? 'No matches.' : 'No live records here.'), pager);
+    el.replaceChildren(...[tools, chips.children.length ? chips : null, rows.length ? table : h('div', { class: 'empty' }, query ? 'No matches.' : 'No live records here.'), pager].filter(Boolean));
   }
 
   // Inline two-step delete: button → "Delete N? [Yes] [No]". No browser dialogs.
