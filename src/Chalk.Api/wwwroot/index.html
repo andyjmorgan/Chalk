@@ -5,12 +5,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Chalk</title>
 <meta name="description" content="Short-lived records for agents. Review what they wrote; remove what is wrong.">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%232f3a2f'/%3E%3Crect x='7' y='9' width='18' height='3' rx='1.5' fill='%23f7f8f5'/%3E%3Crect x='7' y='15' width='12' height='3' rx='1.5' fill='%23f7f8f5' opacity='.8'/%3E%3Crect x='7' y='21' width='15' height='3' rx='1.5' fill='%23f7f8f5' opacity='.55'/%3E%3C/svg%3E">
+<link rel="icon" type="image/svg+xml" href="brand/am-ai-sage-dark.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="app.css">
+<script>try{var t=localStorage.getItem('chalk.theme');document.documentElement.dataset.theme=t?JSON.parse(t):'dark'}catch(e){document.documentElement.dataset.theme='dark'}</script>
 </head>
 <body>
 <header class="top">
-  <a class="brand" href="#/"><span class="mark"></span>Chalk</a>
+  <a class="brand" href="#/"><img class="mark light" src="brand/am-ai-sage-light.svg" alt=""><img class="mark dark" src="brand/am-ai-sage-dark.svg" alt="">Chalk</a>
   <nav id="crumbs" class="crumbs"></nav>
   <div class="spacer"></div>
   <div id="user" class="user"></div>
@@ -18,19 +22,22 @@
 </header>
 <main id="app" class="app"></main>
 <div id="login" class="login hidden">
-  <div class="card auth">
-    <h1><span class="mark"></span>Chalk</h1>
-    <p>Short-lived records for agents. Sign in to review what they wrote and to mint the keys they write with.</p>
+  <main class="auth">
+    <img class="logo light" src="brand/am-ai-sage-light.svg" alt="Chalk"><img class="logo dark" src="brand/am-ai-sage-dark.svg" alt="Chalk">
+    <h1>Welcome back</h1>
+    <p class="sub">Sign in to review your boards</p>
     <div id="idps" class="idps" aria-label="Sign in"></div>
     <p id="loginErr" class="err" role="alert"></p>
+    <button id="pwLogin" class="ghost" type="button">Sign in with a username and password</button>
     <details id="keyLogin">
       <summary>Use an API key instead</summary>
       <form id="loginForm">
-        <label>API key <input id="apiKey" class="mono" type="password" placeholder="chk_…" autocomplete="off" required></label>
+        <input id="apiKey" class="mono" type="password" placeholder="chk_…" autocomplete="off" required aria-label="API key">
         <button type="submit" class="primary">Open</button>
       </form>
     </details>
-  </div>
+  </main>
+  <footer>Built with questionable decisions and caffeine</footer>
 </div>
 <script src="app.js"></script>
 </body>

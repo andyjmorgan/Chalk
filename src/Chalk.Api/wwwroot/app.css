@@ -1,14 +1,20 @@
-:root {
-  --bg: #f7f8f5; --panel: #ffffff; --ink: #1d231d; --muted: #66706a; --line: #d9ded8; --line-soft: #e8ece7;
-  --accent: #2f6b4f; --accent-ink: #ffffff; --warn: #b7791f; --fail: #b3362a; --ok: #2f7a4f; --mark: #fff2a8;
-  --danger: #b3362a; --danger-bg: #fbe9e6; --hover: #eef2ec; --sel: #e2ebe4; --chip: #eef2ec; --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --sans: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+/* Palette shared with the DonkeyWork sandbox (am.ai sage). Dark is the default; data-theme="light" flips it. */
+:root, :root[data-theme="dark"] {
+  --bg: #0b0f13; --panel: #111821; --elev: #182029; --ink: #f2f5f1; --muted: #aab4ae; --faint: #7e8983; --line: #28322e; --line-soft: #1f2824; --line-strong: #39453f;
+  --accent: #76947d; --accent-strong: #86a18d; --accent-ink: #111821; --warn: #c99a5a; --fail: #d6787c; --ok: #69a487; --mark: #4a4320;
+  --danger: #d6787c; --danger-bg: #3a2426; --hover: #182029; --sel: #1e3026; --chip: #182029; color-scheme: dark;
+  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #1b1f1b; --panel: #232823; --ink: #f7f8f5; --muted: #9aa49c; --line: #343b34; --line-soft: #2c322c; --accent: #7fc29b; --accent-ink: #10180f; --warn: #e0a84a; --fail: #e26b5c; --ok: #7fc29b; --mark: #6a5a1a; --danger: #e26b5c; --danger-bg: #3a2522; --hover: #2a302a; --sel: #30392f; --chip: #2a302a; } }
-:root[data-theme="dark"] { --bg: #1b1f1b; --panel: #232823; --ink: #f7f8f5; --muted: #9aa49c; --line: #343b34; --line-soft: #2c322c; --accent: #7fc29b; --accent-ink: #10180f; --warn: #e0a84a; --fail: #e26b5c; --ok: #7fc29b; --mark: #6a5a1a; --danger: #e26b5c; --danger-bg: #3a2522; --hover: #2a302a; --sel: #30392f; --chip: #2a302a; }
+:root[data-theme="light"] {
+  --bg: #f5f7f4; --panel: #ffffff; --elev: #eef2ee; --ink: #172033; --muted: #56635d; --faint: #7b867f; --line: #dce2dd; --line-soft: #e8ece8; --line-strong: #c3ccc5;
+  --accent: #4f735d; --accent-strong: #42634f; --accent-ink: #ffffff; --warn: #9a6b2f; --fail: #a94e52; --ok: #39755c; --mark: #fff2a8;
+  --danger: #a94e52; --danger-bg: #f6e3e4; --hover: #eef2ee; --sel: #e5ece7; --chip: #eef2ee; color-scheme: light;
+}
+:root[data-theme="light"] .dark, :root:not([data-theme="light"]) .light { display: none !important; }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 var(--sans); }
+html, body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 var(--sans); -webkit-font-smoothing: antialiased; }
 a { color: inherit; text-decoration: none; }
 code, .mono { font-family: var(--mono); font-size: 12.5px; }
 button { font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
@@ -23,14 +29,13 @@ input, select { font: inherit; color: inherit; background: var(--panel); border:
 
 .top { display: flex; align-items: center; gap: 12px; padding: 8px 16px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 5; }
 .brand { font-weight: 650; letter-spacing: .2px; display: flex; align-items: center; gap: 8px; }
-.mark { width: 14px; height: 14px; border-radius: 3px; background: var(--ink); display: inline-block; }
+.mark { width: 22px; height: 22px; display: inline-block; }
 .crumbs { color: var(--muted); display: flex; gap: 6px; flex-wrap: wrap; }
 .crumbs a:hover { color: var(--ink); }
 .spacer { flex: 1; }
 .who { color: var(--muted); }
 .app { padding: 16px; max-width: 1500px; margin: 0 auto; }
 
-.login { position: fixed; inset: 0; background: var(--bg); display: grid; place-items: center; z-index: 10; padding: 16px; }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 20px; max-width: 420px; width: 100%; }
 .card h1 { margin: 0 0 6px; font-size: 20px; }
 .card p { color: var(--muted); margin: 0 0 12px; }
@@ -139,18 +144,28 @@ details summary { cursor: pointer; color: var(--muted); padding: 4px 10px; font-
   .app { padding: 16px 16px; }
 }
 
-/* ---- sign-in ---- */
-.card.auth { max-width: 380px; }
-.card.auth h1 { display: flex; align-items: center; gap: 8px; }
-.idps { display: grid; gap: 8px; margin: 14px 0 8px; }
-.idp { display: flex; align-items: center; gap: 12px; padding: 9px 12px; border-radius: 8px; font-weight: 500; text-align: left; }
-.idp .ico { width: 20px; height: 20px; display: inline-flex; flex: none; }
-.idp .ico svg { width: 20px; height: 20px; }
-#keyLogin { margin-top: 6px; }
-#keyLogin summary { color: var(--muted); font-size: 12.5px; padding: 4px 0; }
+/* ---- sign-in (same composition as the sandbox login) ---- */
+.login { position: fixed; inset: 0; background: var(--bg); display: flex; flex-direction: column; z-index: 10; }
+.login .auth { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 16px; width: 100%; max-width: 384px; margin: 0 auto; }
+.login .logo { width: 96px; height: 96px; margin-bottom: 16px; }
+.login h1 { margin: 0 0 8px; font-size: 30px; line-height: 36px; font-weight: 600; }
+.login .sub { margin: 0 0 24px; color: var(--muted); font-size: 16px; }
+.idps { display: flex; justify-content: center; gap: 16px; margin-bottom: 20px; }
+.idp { width: 48px; height: 48px; padding: 0; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--line); border-radius: 12px; background: transparent; transition: background .15s, border-color .15s; }
+.idp:hover { background: var(--elev); border-color: var(--line-strong); }
+.idp svg { width: 24px; height: 24px; }
+.login .err { margin: 0 0 8px; }
+.login .ghost { border: 0; background: transparent; color: var(--muted); font-weight: 600; font-size: 14px; padding: 6px 12px; border-radius: 10px; }
+.login .ghost:hover { background: var(--elev); color: var(--ink); }
+#keyLogin { margin-top: 10px; width: 100%; }
+#keyLogin summary { color: var(--faint); font-size: 13px; font-weight: 600; padding: 6px 0; list-style: none; cursor: pointer; }
+#keyLogin summary::-webkit-details-marker { display: none; }
+#keyLogin summary:hover { color: var(--ink); }
 #keyLogin.only summary { display: none; }
-#keyLogin form { margin-top: 8px; }
-#keyLogin form button { width: 100%; margin-top: 2px; }
+#keyLogin form { margin-top: 10px; display: flex; gap: 8px; }
+#keyLogin form input { flex: 1; background: var(--elev); border-radius: 10px; padding: 9px 12px; }
+#keyLogin form button { border-radius: 10px; padding: 0 16px; }
+.login footer { padding: 16px; text-align: center; color: var(--muted); font-size: 14px; }
 
 /* ---- user menu ---- */
 .user { position: relative; }

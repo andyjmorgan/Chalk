@@ -80,11 +80,13 @@
   async function loadAuthConfig() {
     try { authCfg = await (await fetch('/api/v1/auth/config')).json(); } catch { authCfg = { enabled: false, providers: [] }; }
     const box = $('#idps'), kl = $('#keyLogin');
-    if (!authCfg.enabled) { box.replaceChildren(); kl.open = true; kl.classList.add('only'); return; }
+    if (!authCfg.enabled) { box.replaceChildren(); kl.open = true; kl.classList.add('only'); $('#pwLogin').classList.add('hidden'); return; }
     kl.classList.remove('only');
+    const go = (hint) => { store.set('chalk.return', location.hash && !location.hash.startsWith('#error') ? location.hash : '#/'); location.assign('/api/v1/auth/login' + (hint ? `?idpHint=${encodeURIComponent(hint)}` : '')); };
     box.replaceChildren(...authCfg.providers.filter((p) => IDP[p]).map((p) => h('button', {
-      class: 'idp', type: 'button', onclick: () => { store.set('chalk.return', location.hash && !location.hash.startsWith('#error') ? location.hash : '#/'); location.assign(`/api/v1/auth/login?idpHint=${encodeURIComponent(p)}`); },
-    }, h('span', { class: 'ico', html: IDP[p][1] }), `Continue with ${IDP[p][0]}`)));
+      class: 'idp', type: 'button', title: `Sign in with ${IDP[p][0]}`, 'aria-label': `Sign in with ${IDP[p][0]}`, html: IDP[p][1], onclick: () => go(p),
+    })));
+    $('#pwLogin').onclick = () => go(null);
   }
   // The server redirects back to /#token_response=… (or /#error=…); the fragment never reaches a server log.
   function consumeCallback() {
@@ -125,11 +127,9 @@
     catch (err) { apiKey = null; showLogin(err.message === 'unauthorized' ? 'That key was rejected.' : err.message); }
   });
   $('#theme').addEventListener('click', () => {
-    const cur = document.documentElement.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-    const next = cur === 'dark' ? 'light' : 'dark';
+    const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
     document.documentElement.dataset.theme = next; store.set('chalk.theme', next);
   });
-  { const t = store.get('chalk.theme', null); if (t) document.documentElement.dataset.theme = t; }
 
   // ---- routing ----
   const app = $('#app'), crumbs = $('#crumbs');
