@@ -167,7 +167,7 @@ tbody tr.sel { background: var(--sel); }
 td.num { text-align: right; }
 td .sc { display: inline-block; margin-left: 8px; color: var(--muted); font-size: 12px; white-space: nowrap; }
 td .sc b { color: var(--ink); font-weight: 600; }
-td.k { white-space: nowrap; }
+td.k { white-space: nowrap; max-width: 340px; overflow: hidden; text-overflow: ellipsis; }
 td.ell { max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .muted { color: var(--muted); }
 .soon { color: var(--warn); }
