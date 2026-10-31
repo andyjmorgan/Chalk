@@ -31,6 +31,59 @@
   const timeEl = (iso, cls = '') => h('span', { class: `mono ${cls}`, title: abs(iso) }, rel(iso));
   const soon = (iso) => iso && new Date(iso).getTime() - Date.now() < 86400e3;
 
+  // ---- icons (lucide, 24-grid, stroke) ----
+  const I = Object.fromEntries(Object.entries({
+    box: '<path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>',
+    key: '<path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z"/><circle cx="16.5" cy="7.5" r=".5" fill="currentColor"/>',
+    list: '<rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/><path d="M14 4h7"/><path d="M14 9h7"/><path d="M14 15h7"/><path d="M14 20h7"/>',
+    plus: '<path d="M5 12h14"/><path d="M12 5v14"/>', x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>', check: '<path d="M20 6 9 17l-5-5"/>',
+    copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+    logout: '<path d="m16 17 5-5-5-5"/><path d="M21 12H9"/><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>',
+    menu: '<path d="M4 5h16"/><path d="M4 12h16"/><path d="M4 19h16"/>',
+    sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>',
+    moon: '<path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/>',
+    panelClose: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="m16 15-3-3 3-3"/>',
+    panelOpen: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="m14 9 3 3-3 3"/>',
+    clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6h4"/>',
+    history: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
+  }).map(([k, v]) => [k, `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${v}</svg>`]));
+  const icon = (name, cls = '') => { const s = h('span', { class: `ico ${cls}`, html: I[name] }); return s.firstChild; };
+
+  // ---- shell: sidebar, collapse, mobile drawer, theme ----
+  const shellEl = $('#shell');
+  const setTheme = (t) => { document.documentElement.dataset.theme = t; store.set('chalk.theme', t); $('#theme').replaceChildren(icon(t === 'light' ? 'moon' : 'sun')); };
+  setTheme(document.documentElement.dataset.theme === 'light' ? 'light' : 'dark');
+  $('#theme').addEventListener('click', () => setTheme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light'));
+  const setCollapsed = (c) => { shellEl.classList.toggle('collapsed', c); store.set('chalk.sidebar', c ? 'collapsed' : 'open'); const b = $('#collapse'); b.replaceChildren(icon(c ? 'panelOpen' : 'panelClose')); b.setAttribute('aria-label', c ? 'Expand navigation' : 'Collapse navigation'); b.title = c ? 'Expand' : 'Collapse'; };
+  setCollapsed(store.get('chalk.sidebar', 'open') === 'collapsed');
+  $('#collapse').addEventListener('click', () => setCollapsed(!shellEl.classList.contains('collapsed')));
+  const openNav = (o) => { shellEl.classList.toggle('open', o); $('#scrim').classList.toggle('hidden', !o); };
+  $('#openNav').replaceChildren(icon('menu')); $('#closeNav').replaceChildren(icon('x'));
+  $('#openNav').addEventListener('click', () => openNav(true));
+  $('#closeNav').addEventListener('click', () => openNav(false));
+  $('#scrim').addEventListener('click', () => openNav(false));
+  const tints = ['c-accent', 'c-warn', 'c-plum', 'c-info', 'c-ok'];
+  function renderNav(boards = []) {
+    const item = (href, name, ic, tint) => h('a', { href, title: name, 'aria-label': name }, icon(ic, tint), h('span', {}, name));
+    const groups = [
+      h('div', { class: 'group' }, item('#/', 'Overview', 'box', 'c-accent')),
+      boards.length ? h('div', { class: 'group' }, h('div', { class: 'sep', 'aria-hidden': true }), h('p', { class: 'glabel', 'aria-hidden': true }, 'Boards'), ...boards.map((b, i) => item(`#/b/${encodeURIComponent(b)}`, b, 'list', tints[i % tints.length]))) : null,
+      h('div', { class: 'group' }, h('div', { class: 'sep', 'aria-hidden': true }), h('p', { class: 'glabel', 'aria-hidden': true }, 'Auth'), item('#/keys', 'API keys', 'key', 'c-ok')),
+    ];
+    $('#nav').replaceChildren(...groups.filter(Boolean));
+    markNav();
+  }
+  function markNav() {
+    const hash = location.hash || '#/';
+    for (const a of $('#nav').querySelectorAll('a')) {
+      const href = a.getAttribute('href');
+      a.classList.toggle('on', href === '#/' ? hash === '#/' || hash === '' : hash === href || hash.startsWith(href + '/') || hash.startsWith(href + '?'));
+    }
+  }
+  const pageHeader = (title, description, actions = null, eyebrow = null) => h('div', { class: 'ph' },
+    h('div', {}, eyebrow ? h('p', { class: 'eyebrow' }, eyebrow) : null, h('h1', {}, title), description ? h('p', {}, description) : null),
+    actions ? h('div', { class: 'actions' }, actions) : null);
+
   // ---- auth / api ----
   // Two credentials: a Keycloak session (tokens in localStorage, refreshed in place) or a pasted API key.
   const T = { get: () => store.get('chalk.tokens', null), set: (t) => store.set('chalk.tokens', t), clear: () => store.del('chalk.tokens') };
@@ -106,17 +159,19 @@
     else { location.hash = '#/'; showLogin(); }
   }
   let me = null;
+  const initials = (m) => { const n = m.kind === 'user' ? (m.name || m.email || m.user) : m.principal.replace(/^key:/, ''); return (n.split(/[\s@._-]+/).filter(Boolean).map((p) => p[0]).join('').toUpperCase().slice(0, 2) || 'U'); };
   async function whoami() {
     me = (await api('/api/v1/me')).data;
     const label = me.kind === 'user' ? (me.name || me.user) : me.principal;
-    const avatar = h('span', { class: 'avatar' }, me.picture ? h('img', { src: me.picture, alt: '', referrerpolicy: 'no-referrer' }) : (label.replace(/^key:/, '')[0] || '?').toUpperCase());
-    const btn = h('button', { class: 'ubtn', 'aria-haspopup': 'menu', 'aria-label': 'Account' }, avatar, h('span', { class: 'uname' }, label), h('span', { class: 'muted' }, '▾'));
+    const avatar = h('span', { class: 'avatar' }, me.picture ? h('img', { src: me.picture, alt: '', referrerpolicy: 'no-referrer' }) : initials(me));
+    const btn = h('button', { class: 'ubtn', type: 'button', 'aria-haspopup': 'menu', 'aria-label': 'Account menu' }, avatar);
     const menu = h('div', { class: 'menu hidden', role: 'menu' },
-      h('div', { class: 'mhead' }, h('b', {}, label), h('span', { class: `muted ${me.email ? '' : 'mono'}` }, me.email || me.scopes.join(' '))),
-      me.canManageKeys ? h('a', { href: '#/keys', role: 'menuitem', onclick: () => menu.classList.add('hidden') }, 'API keys') : null,
-      h('button', { role: 'menuitem', onclick: signOut }, me.kind === 'user' ? 'Sign out' : 'Forget this key'));
+      h('div', { class: 'mhead' }, h('b', {}, label), h('span', {}, me.email || (me.kind === 'key' ? me.scopes.join(' ') : ''))),
+      h('div', { class: 'msep' }),
+      h('button', { type: 'button', role: 'menuitem', onclick: signOut }, icon('logout'), me.kind === 'user' ? 'Log out' : 'Forget this key'));
     btn.addEventListener('click', (e) => { e.stopPropagation(); menu.classList.toggle('hidden'); });
     $('#user').replaceChildren(btn, menu);
+    renderNav(me.boards || []);
     return me;
   }
   document.addEventListener('click', () => $('#user .menu')?.classList.add('hidden'));
@@ -126,24 +181,20 @@
     try { await whoami(); store.set('chalk.apiKey', apiKey); $('#apiKey').value = ''; hideLogin(); route(); }
     catch (err) { apiKey = null; showLogin(err.message === 'unauthorized' ? 'That key was rejected.' : err.message); }
   });
-  $('#theme').addEventListener('click', () => {
-    const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
-    document.documentElement.dataset.theme = next; store.set('chalk.theme', next);
-  });
 
   // ---- routing ----
-  const app = $('#app'), crumbs = $('#crumbs');
+  const app = $('#app');
   const parse = () => {
     const [path, qs] = location.hash.replace(/^#/, '').split('?');
     const parts = path.split('/').filter(Boolean);
     return { parts, q: new URLSearchParams(qs || '') };
   };
   const link = (parts, q = {}) => '#/' + parts.map(encodeURIComponent).join('/') + (Object.keys(q).length ? '?' + new URLSearchParams(Object.fromEntries(Object.entries(q).filter(([, v]) => v != null && v !== ''))) : '');
-  const setCrumbs = (...items) => { crumbs.replaceChildren(...items.flatMap((it, i) => [i ? h('span', {}, '›') : null, typeof it === 'string' ? h('span', {}, it) : it]).filter(Boolean)); };
+  const setCrumbs = () => {};
   async function route() {
     if (!apiKey && !T.get()) return showLogin();
     const { parts, q } = parse();
-    closeDrawer();
+    closeDrawer(); openNav(false); markNav();
     try {
       if (parts.length === 0) await viewHome();
       else if (parts[0] === 'keys') await viewKeys();
@@ -159,11 +210,11 @@
 
   // ---- home ----
   async function viewHome() {
-    setCrumbs('Boards');
-    app.replaceChildren(h('div', { class: 'empty' }, 'Loading…'));
+    const head = pageHeader('Boards', 'What your agents wrote, by board. Open one to review records, see what changed and what expires next.');
+    app.replaceChildren(h('div', { class: 'page' }, head, h('div', { class: 'empty' }, 'Loading…')));
     const { data } = await api('/api/v1/boards');
-    if (!data.length) return app.replaceChildren(h('div', { class: 'empty' }, 'No boards visible to this key.'));
-    app.replaceChildren(h('div', { class: 'cards' }, data.map((b) => h('a', { class: 'bcard', href: link(['b', b.name]) },
+    if (!data.length) return app.replaceChildren(h('div', { class: 'page' }, head, h('div', { class: 'panel' }, h('div', { class: 'kempty' }, icon('box'), h('b', {}, 'No boards yet'), h('div', {}, 'An agent creates one with create_board, or POST /api/v1/boards.')))));
+    app.replaceChildren(h('div', { class: 'page' }, head, h('div', { class: 'cards' }, data.map((b) => h('a', { class: 'bcard', href: link(['b', b.name]) },
       h('h2', {}, b.name, b.stale ? h('span', { class: 'badge stale', title: 'No write for longer than the TTL' }, 'stale') : null, b.embed ? h('span', { class: 'badge', title: `Vector search on ${b.embed.fields.join(', ')}` }, 'embed') : null),
       h('p', { class: 'desc' }, b.description || ' '),
       h('div', { class: 'stats' },
@@ -173,7 +224,7 @@
         h('div', { class: 'stat' }, h('b', { class: b.counts.expiring24h ? 'soon' : '' }, b.counts.expiring24h), h('span', {}, 'expiring 24h'))),
       h('div', { class: 'foot' },
         h('span', { class: 'mono' }, b.key.join(' / '), b.ttl ? ` · ttl ${b.ttl}` : ' · keep'),
-        b.lastWrite ? h('span', {}, 'last write ', timeEl(b.lastWrite.at), ' by ', h('span', { class: 'mono' }, b.lastWrite.writer)) : h('span', {}, 'never written'))))));
+        b.lastWrite ? h('span', {}, 'last write ', timeEl(b.lastWrite.at), ' by ', h('span', { class: 'mono' }, b.lastWrite.writer)) : h('span', {}, 'never written')))))));
   }
 
   // ---- board page ----
@@ -392,74 +443,92 @@
       h('div', { class: 'tblwrap' }, h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'key'), ...fieldCols.map((c) => h('th', {}, c)), h('th', {}, 'expires'), h('th', {}, 'observed'), h('th', { class: 'num' }, 'rev'), h('th', {}, 'writer'))), body)));
   }
 
-  // ---- API keys (minted by the signed-in user; shown once) ----
+  // ---- API keys (minted by the signed-in user; shown once; same composition as the sandbox page) ----
+  const SCOPES = [
+    ['read', 'Read boards, records, history and changes. Every key gets this.'],
+    ['write', 'Create boards and upsert records.'],
+    ['delete', 'Delete records and subtrees.'],
+    ['admin', 'Mint and revoke other API keys for this account.'],
+  ];
+  const modal = (title, body, footer) => {
+    const close = () => wrap.remove();
+    const wrap = h('div', { class: 'overlay', role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
+      h('div', { class: 'modal' }, h('div', { class: 'mh' }, h('h2', {}, title), h('button', { class: 'icon', type: 'button', 'aria-label': 'Close', onclick: close }, icon('x'))), h('div', { class: 'mb' }, body), footer ? h('div', { class: 'mf' }, footer) : null));
+    wrap.addEventListener('click', (e) => { if (e.target === wrap) close(); });
+    document.body.append(wrap);
+    return { close, el: wrap };
+  };
   async function viewKeys() {
     if (!me) await whoami();
-    setCrumbs(h('a', { href: '#/' }, 'Boards'), 'API keys');
-    const bar = h('div', { class: 'bar' }, h('h1', {}, 'API keys'), h('span', { class: 'meta' }, 'keys act as you on your boards · give each agent the narrowest scope that works'));
-    const panel = h('div', { class: 'panel' }, h('div', { class: 'empty' }, 'Loading…'));
-    app.replaceChildren(bar, panel);
     const base = location.origin;
-    const nameIn = h('input', { placeholder: 'e.g. news-routine', required: true, maxlength: 64 });
-    const sc = { read: h('input', { type: 'checkbox', checked: true }), write: h('input', { type: 'checkbox', checked: true }), delete: h('input', { type: 'checkbox' }), admin: h('input', { type: 'checkbox' }) };
-    const boardsIn = h('input', { placeholder: 'all boards', title: 'Comma-separated board names to restrict this key to' });
-    const expSel = h('select', {}, ...[['', 'never'], ['7d', '7 days'], ['30d', '30 days'], ['90d', '90 days'], ['365d', '1 year']].map(([v, t]) => h('option', { value: v }, t)));
-    const submit = h('button', { class: 'primary', type: 'submit' }, 'Create key');
-    const form = h('form', { class: 'form' },
-      h('label', {}, 'Name', nameIn),
-      h('label', {}, 'Scopes', h('div', { class: 'scopes' }, ...Object.entries(sc).map(([k, el]) => h('label', {}, el, k)))),
-      h('label', {}, 'Boards', boardsIn),
-      h('label', {}, 'Expires', expSel),
-      submit);
-    const reveal = h('div', {});
-    const tblwrap = h('div', { class: 'tblwrap' });
-    const help = h('div', { class: 'help' },
-      h('span', {}, 'Agents pass the key as ', h('code', {}, 'X-Api-Key'), ' or ', h('code', {}, 'Authorization: Bearer chk_…'), '. REST at ', h('code', {}, `${base}/api/v1`), ', MCP at ', h('code', {}, `${base}/mcp`), '.'),
-      h('span', {}, 'Claude Code: ', h('code', {}, `claude mcp add --transport http chalk ${base}/mcp --header "X-Api-Key: chk_…"`)));
-    panel.replaceChildren(form, reveal, tblwrap, help);
+    const list = h('div', { class: 'card2' });
+    const newBtn = h('button', { class: 'primary', type: 'button' }, icon('plus'), 'New API key');
+    app.replaceChildren(h('div', { class: 'page' }, pageHeader('API keys', 'Scoped credentials for the agents and routines that write to your boards. Keys act as you.', newBtn), list));
 
     async function load() {
       const { data } = await api('/api/v1/keys');
-      if (!data.length) return tblwrap.replaceChildren(h('div', { class: 'empty' }, 'No keys yet. Mint one above for each agent or routine.'));
-      const scopes = (k) => ['read', 'write', 'delete', 'admin'].filter((x) => k.scopes?.[x]).map((x) => h('span', { class: 'badge' }, x));
-      tblwrap.replaceChildren(h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'name'), h('th', {}, 'prefix'), h('th', {}, 'scopes'), h('th', {}, 'boards'), h('th', {}, 'created'), h('th', {}, 'last used'), h('th', {}, 'expires'), h('th', {}, ''))),
-        h('tbody', {}, data.map((k) => {
-          const off = !k.enabled || k.expired;
-          const tr = h('tr', { class: off ? 'off' : '', style: 'cursor:default' }, h('td', {}, k.name), h('td', { class: 'mono' }, k.prefix + '…'), h('td', {}, ...scopes(k)),
-            h('td', { class: 'mono muted' }, k.scopes?.boards?.join(', ') || 'all'), h('td', {}, timeEl(k.createdAt)), h('td', {}, k.lastUsedAt ? timeEl(k.lastUsedAt) : h('span', { class: 'muted' }, 'never')),
-            h('td', {}, !k.enabled ? h('span', { class: 'badge fail' }, 'revoked') : k.expired ? h('span', { class: 'badge' }, 'expired') : k.expiresAt ? timeEl(k.expiresAt, soon(k.expiresAt) ? 'soon' : '') : h('span', { class: 'muted' }, 'never')),
-            h('td', {}, off ? null : revokeBtn(k)));
-          return tr;
-        }))));
+      const head = h('div', { class: 'chead' }, h('span', {}, `${data.length} API key${data.length === 1 ? '' : 's'}`));
+      if (!data.length) return list.replaceChildren(head, h('div', { class: 'kempty' }, icon('key'), h('b', {}, 'No API keys yet'), h('div', {}, 'Mint one per agent or routine.')));
+      const cols = h('div', { class: 'kcols' }, h('span', {}, 'Key'), h('span', {}, 'Scopes'), h('span', {}, 'Boards'), h('span', {}, 'Created / expires'), h('span', {}, 'Last used'), h('span', { class: 'r' }, 'Status'));
+      list.replaceChildren(head, cols, ...data.map((k) => {
+        const off = !k.enabled || k.expired;
+        return h('div', { class: 'krow' },
+          h('div', { class: 'kid' }, h('div', { class: `ktile ${off ? 'off' : ''}` }, icon('key')), h('div', { style: 'min-width:0' }, h('div', { class: 'kname' }, k.name), h('div', { class: 'kprefix mono' }, k.prefix + '…'))),
+          h('div', { class: 'pills' }, ...['read', 'write', 'delete', 'admin'].filter((x) => k.scopes?.[x]).map((x) => h('span', { class: 'pill' }, x))),
+          h('div', { class: 'kmeta' }, h('p', { class: k.scopes?.boards ? 'mono' : '' }, k.scopes?.boards?.join(', ') || 'all boards')),
+          h('div', { class: 'kmeta' }, h('p', {}, icon('clock'), rel(k.createdAt)), k.expiresAt ? h('p', { class: `sub ${soon(k.expiresAt) && !k.expired ? 'soon' : ''}` }, k.expired ? 'expired ' : 'expires ', rel(k.expiresAt)) : null),
+          h('div', { class: 'kmeta' }, h('p', {}, icon('history'), k.lastUsedAt ? rel(k.lastUsedAt) : 'Never')),
+          h('div', { class: 'r' }, statusPill(k)));
+      }));
     }
-    function revokeBtn(k) {
+    function statusPill(k) {
+      if (!k.enabled) return h('span', { class: 'pill off' }, h('span', { class: 'dot' }), 'Revoked');
+      if (k.expired) return h('span', { class: 'pill warn' }, h('span', { class: 'dot' }), 'Expired');
       const wrap = h('span', {});
-      const btn = h('button', { class: 'danger' }, 'Revoke');
-      btn.addEventListener('click', () => {
-        const yes = h('button', { class: 'danger' }, 'Revoke'), no = h('button', {}, 'Keep');
-        const box = h('span', { class: 'confirm' }, h('span', {}, `Agents using ${k.name} stop working.`), yes, no);
+      const pill = h('button', { class: 'pill ok', type: 'button', role: 'switch', 'aria-checked': 'true', 'aria-label': `Revoke ${k.name}`, title: 'Revoke this key' }, h('span', { class: 'dot' }), 'Enabled');
+      pill.addEventListener('click', () => {
+        const yes = h('button', { class: 'danger sm', type: 'button' }, 'Revoke'), no = h('button', { class: 'sm', type: 'button' }, 'Keep');
+        const box = h('span', { class: 'confirm' }, h('span', {}, 'Agents using it stop.'), yes, no);
         wrap.replaceChildren(box);
-        no.addEventListener('click', () => wrap.replaceChildren(btn));
-        yes.addEventListener('click', async () => { yes.disabled = true; yes.textContent = '…'; try { await api(`/api/v1/keys/${k.id}`, { method: 'DELETE' }); await load(); } catch (err) { box.replaceChildren(h('span', {}, err.message), no); } });
+        no.addEventListener('click', () => wrap.replaceChildren(pill));
+        yes.addEventListener('click', async () => { yes.disabled = true; try { await api(`/api/v1/keys/${k.id}`, { method: 'DELETE' }); await load(); } catch (err) { box.replaceChildren(h('span', {}, err.message), no); } });
       });
-      wrap.append(btn); return wrap;
+      wrap.append(pill); return wrap;
     }
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault(); submit.disabled = true;
-      const boards = boardsIn.value.split(',').map((x) => x.trim()).filter(Boolean);
-      try {
-        const { data } = await api('/api/v1/keys', { method: 'POST', body: JSON.stringify({ name: nameIn.value.trim(), read: sc.read.checked, write: sc.write.checked, delete: sc.delete.checked, admin: sc.admin.checked, boards: boards.length ? boards : null, expiresIn: expSel.value || undefined }) });
-        const code = h('code', { class: 'mono' }, data.key);
-        const copy = h('button', { class: 'primary' }, 'Copy');
-        copy.addEventListener('click', async () => { try { await navigator.clipboard.writeText(data.key); copy.textContent = 'Copied'; } catch { copy.textContent = 'Select and copy'; } });
-        reveal.replaceChildren(h('div', { class: 'reveal' },
-          h('div', {}, h('b', {}, `Key “${data.name}” created.`), ' Copy it now; it is shown once and stored only as a hash.'),
-          h('div', { class: 'row' }, code, copy, h('button', { onclick: () => reveal.replaceChildren() }, 'Done')),
-          h('pre', {}, `claude mcp add --transport http chalk ${base}/mcp --header "X-Api-Key: ${data.key}"`)));
-        nameIn.value = ''; await load();
-      } catch (err) { reveal.replaceChildren(h('div', { class: 'reveal' }, h('span', { class: 'err' }, err.message))); }
-      finally { submit.disabled = false; }
+    newBtn.addEventListener('click', () => {
+      const nameIn = h('input', { required: true, maxlength: 64, placeholder: 'news-routine' });
+      const boardsIn = h('input', { placeholder: 'leave empty for all boards' });
+      const expSel = h('select', {}, ...[['', 'Never'], ['7d', '7 days'], ['30d', '30 days'], ['90d', '90 days'], ['365d', '1 year']].map(([v, t]) => h('option', { value: v }, t)));
+      const checks = Object.fromEntries(SCOPES.map(([s]) => [s, h('input', { type: 'checkbox', checked: s === 'read' || s === 'write', disabled: s === 'read' })]));
+      const create = h('button', { class: 'primary', type: 'submit' }, icon('check'), 'Create key');
+      const form = h('form', {},
+        h('label', { class: 'field' }, h('span', {}, 'Name'), nameIn),
+        h('label', { class: 'field' }, h('span', {}, 'Boards'), boardsIn, h('span', { class: 'hint' }, 'Comma-separated board names to restrict the key to.')),
+        h('label', { class: 'field' }, h('span', {}, 'Expires'), expSel),
+        h('div', {}, h('p', { class: 'field' }, h('span', {}, 'Scopes')), h('div', { class: 'scopes' }, ...SCOPES.map(([s, d]) => h('label', {}, checks[s], h('span', {}, h('b', {}, `chalk:${s}`), h('span', {}, d)))))));
+      const cancel = h('button', { type: 'button' }, 'Cancel');
+      const m = modal('New API key', form, [cancel, create]);
+      cancel.addEventListener('click', m.close);
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault(); create.disabled = true;
+        const boards = boardsIn.value.split(',').map((x) => x.trim()).filter(Boolean);
+        try {
+          const { data } = await api('/api/v1/keys', { method: 'POST', body: JSON.stringify({ name: nameIn.value.trim(), read: true, write: checks.write.checked, delete: checks.delete.checked, admin: checks.admin.checked, boards: boards.length ? boards : null, expiresIn: expSel.value || undefined }) });
+          m.close(); await load(); showCreated(data);
+        } catch (err) { create.disabled = false; form.prepend(h('p', { class: 'err' }, err.message)); }
+      });
+      setTimeout(() => nameIn.focus(), 0);
     });
+    function showCreated(data) {
+      const copy = h('button', { class: 'icon', type: 'button', 'aria-label': 'Copy key' }, icon('copy'));
+      copy.addEventListener('click', async () => { try { await navigator.clipboard.writeText(data.key); copy.replaceChildren(icon('check')); } catch { /* clipboard blocked: the code is selectable */ } });
+      const done = h('button', { class: 'primary', type: 'button' }, 'I stored it');
+      const m = modal('Copy your API key', h('div', {},
+        h('p', { class: 'muted' }, 'This secret is shown once. Store it somewhere secure.'),
+        h('div', { class: 'secret' }, h('code', {}, data.key), copy),
+        h('pre', {}, `claude mcp add --transport http chalk ${base}/mcp --header "X-Api-Key: ${data.key}"`)), [done]);
+      done.addEventListener('click', m.close);
+    }
     await load();
   }
 

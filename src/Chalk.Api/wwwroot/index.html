@@ -13,14 +13,29 @@
 <script>try{var t=localStorage.getItem('chalk.theme');document.documentElement.dataset.theme=t?JSON.parse(t):'dark'}catch(e){document.documentElement.dataset.theme='dark'}</script>
 </head>
 <body>
-<header class="top">
-  <a class="brand" href="#/"><img class="mark light" src="brand/am-ai-sage-light.svg" alt=""><img class="mark dark" src="brand/am-ai-sage-dark.svg" alt="">Chalk</a>
-  <nav id="crumbs" class="crumbs"></nav>
-  <div class="spacer"></div>
-  <div id="user" class="user"></div>
-  <button id="theme" class="icon" title="Toggle theme" aria-label="Toggle theme">◐</button>
-</header>
-<main id="app" class="app"></main>
+<div id="shell" class="shell">
+  <button id="scrim" class="scrim hidden" aria-label="Close navigation" type="button"></button>
+  <aside id="side" class="side">
+    <div class="sidehead">
+      <a class="logo" href="#/"><img class="light" src="brand/am-ai-sage-light.svg" alt=""><img class="dark" src="brand/am-ai-sage-dark.svg" alt=""><span class="logotext">Chalk</span></a>
+      <button id="closeNav" class="icon mobile" aria-label="Close navigation" type="button"></button>
+    </div>
+    <nav id="nav" class="nav" aria-label="Main"></nav>
+    <div class="sidefoot">
+      <span class="tag">Build something rad</span>
+      <button id="collapse" class="icon desktop" aria-label="Collapse navigation" type="button"></button>
+    </div>
+  </aside>
+  <div class="body">
+    <header class="top">
+      <button id="openNav" class="icon mobile" aria-label="Open navigation" type="button"></button>
+      <div class="spacer"></div>
+      <button id="theme" class="icon" aria-label="Toggle theme" type="button"></button>
+      <div id="user" class="user"></div>
+    </header>
+    <main id="app" class="app"></main>
+  </div>
+</div>
 <div id="login" class="login hidden">
   <main class="auth">
     <img class="logo light" src="brand/am-ai-sage-light.svg" alt="Chalk"><img class="logo dark" src="brand/am-ai-sage-dark.svg" alt="Chalk">
