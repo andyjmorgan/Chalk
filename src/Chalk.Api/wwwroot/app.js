@@ -500,8 +500,8 @@
       const boardsIn = h('input', { placeholder: 'leave empty for all boards' });
       const expSel = h('select', {}, ...[['', 'Never'], ['7d', '7 days'], ['30d', '30 days'], ['90d', '90 days'], ['365d', '1 year']].map(([v, t]) => h('option', { value: v }, t)));
       const checks = Object.fromEntries(SCOPES.map(([s]) => [s, h('input', { type: 'checkbox', checked: s === 'read' || s === 'write', disabled: s === 'read' })]));
-      const create = h('button', { class: 'primary', type: 'submit' }, icon('check'), 'Create key');
-      const form = h('form', {},
+      const create = h('button', { class: 'primary', type: 'submit', form: 'newKeyForm' }, icon('check'), 'Create key');
+      const form = h('form', { id: 'newKeyForm' },
         h('label', { class: 'field' }, h('span', {}, 'Name'), nameIn),
         h('label', { class: 'field' }, h('span', {}, 'Boards'), boardsIn, h('span', { class: 'hint' }, 'Comma-separated board names to restrict the key to.')),
         h('label', { class: 'field' }, h('span', {}, 'Expires'), expSel),
