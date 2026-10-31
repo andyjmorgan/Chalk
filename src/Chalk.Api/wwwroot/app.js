@@ -189,7 +189,12 @@
     const parts = path.split('/').filter(Boolean);
     return { parts, q: new URLSearchParams(qs || '') };
   };
-  const link = (parts, q = {}) => '#/' + parts.map(encodeURIComponent).join('/') + (Object.keys(q).length ? '?' + new URLSearchParams(Object.fromEntries(Object.entries(q).filter(([, v]) => v != null && v !== ''))) : '');
+  const link = (parts, q = {}) => {
+    const sp = new URLSearchParams();
+    for (const [k, v] of Object.entries(q)) for (const x of Array.isArray(v) ? v : [v]) if (x != null && x !== '') sp.append(k, x);
+    const qs = sp.toString();
+    return '#/' + parts.map(encodeURIComponent).join('/') + (qs ? '?' + qs : '');
+  };
   const setCrumbs = () => {};
   async function route() {
     if (!apiKey && !T.get()) return showLogin();
@@ -238,7 +243,7 @@
   async function viewBoard(board, q) {
     const def = await describe(board);
     const prefix = q.get('prefix') || '', query = q.get('q') || '';
-    const filters = q.getAll('filter');
+    const filters = q.getAll('filter').filter(Boolean);
     setCrumbs(h('a', { href: '#/' }, 'Boards'), h('a', { href: link(['b', board]) }, board), prefix ? h('span', { class: 'mono' }, prefix) : null);
     const lastSeenKey = `chalk.seen.${board}`;
     const since = store.get(lastSeenKey, null);

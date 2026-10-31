@@ -506,6 +506,7 @@ public sealed class Store(NpgsqlDataSource db, ILogger<Store> log)
             sb.Append(" AND r.expires_at IS NOT NULL AND r.expires_at < now() + @within");
             ps.Add(new NpgsqlParameter("within", NpgsqlDbType.Interval) { Value = expiringWithin.Value });
         }
+        filter = filter?.Where(f => !string.IsNullOrWhiteSpace(f)).ToArray();
         if (filter is { Length: > 0 })
         {
             for (var i = 0; i < filter.Length; i++)
