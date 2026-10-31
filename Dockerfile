@@ -3,7 +3,9 @@ WORKDIR /src
 COPY src/Chalk.Api/Chalk.Api.csproj src/Chalk.Api/
 RUN dotnet restore src/Chalk.Api/Chalk.Api.csproj
 COPY src/ src/
-RUN dotnet publish src/Chalk.Api/Chalk.Api.csproj -c Release -o /app/publish /p:UseAppHost=false
+# Git sha of the build; surfaces as the ?v= cache-buster on UI assets.
+ARG CHALK_VERSION=dev
+RUN dotnet publish src/Chalk.Api/Chalk.Api.csproj -c Release -o /app/publish /p:UseAppHost=false /p:ChalkVersion=$CHALK_VERSION
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app

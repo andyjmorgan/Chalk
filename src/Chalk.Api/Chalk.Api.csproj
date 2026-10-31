@@ -8,6 +8,8 @@
     <AssemblyName>Chalk.Api</AssemblyName>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <NoWarn>CS1591</NoWarn>
+    <!-- Set by the Dockerfile from the git sha; drives the ?v= cache-buster on UI assets. -->
+    <InformationalVersion Condition="'$(ChalkVersion)' != ''">$(ChalkVersion)</InformationalVersion>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="ModelContextProtocol.AspNetCore" Version="1.0.0" />
