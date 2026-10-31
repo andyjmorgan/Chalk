@@ -251,8 +251,9 @@
     const bar = h('div', { class: 'bar' }, h('h1', {}, board), h('span', { class: 'meta' }, def.description), h('span', { class: 'meta mono' }, `ttl ${def.ttl || 'keep'} · ${def.counts.live} live`), h('div', { class: 'spacer' }), tabs(board, 'records', prefix));
     const treeEl = h('div', { class: 'panel tree' });
     const tableEl = h('div', { class: 'panel' });
-    app.replaceChildren(bar, h('div', { class: 'split' }, treeEl, tableEl));
-    await Promise.all([renderTree(treeEl, board, def, prefix, since), renderTable(tableEl, board, def, { prefix, query, filters })]);
+    // Searching: results take the full width; the key tree only matters when browsing.
+    app.replaceChildren(bar, query ? h('div', { class: 'split solo' }, tableEl) : h('div', { class: 'split' }, treeEl, tableEl));
+    await Promise.all([query ? null : renderTree(treeEl, board, def, prefix, since), renderTable(tableEl, board, def, { prefix, query, filters })]);
     store.set(lastSeenKey, new Date().toISOString());
   }
 
@@ -335,7 +336,8 @@
     const keyCols = segNames.slice(depth);
     const fieldCols = (def.search?.fields || []).map((p) => p.replace(/^\//, '')).filter((f) => !segNames.includes(f));
     const enumCols = Object.entries(def.schema?.properties || {}).filter(([, d]) => d.enum).map(([k]) => k).filter((k) => !segNames.includes(k) && !fieldCols.includes(k));
-    const head = h('tr', {}, ...keyCols.map((c) => h('th', {}, c)), ...enumCols.map((c) => h('th', {}, c)), ...fieldCols.map((c) => h('th', {}, c)), query ? h('th', {}, 'score') : null, h('th', {}, 'observed'), h('th', {}, 'expires'), h('th', { class: 'num' }, 'rev'), h('th', {}, 'writer'), h('th', {}));
+    const head = h('tr', {}, ...keyCols.map((c) => h('th', {}, c)), ...enumCols.map((c) => h('th', { class: 'w-enum' }, c)), ...fieldCols.map((c) => h('th', {}, c)),
+      query ? h('th', { class: 'w-score' }, 'score') : null, h('th', { class: 'w-time' }, 'observed'), query ? null : h('th', { class: 'w-time' }, 'expires'), h('th', { class: 'num w-rev' }, 'rev'), query ? null : h('th', { class: 'w-writer' }, 'writer'), h('th', { class: 'w-act' }));
     const get = (v, path) => path.split('.').reduce((o, k) => (o == null ? o : o[k]), v);
     const cell = (v) => (v == null ? h('span', { class: 'muted' }, '—') : typeof v === 'object' ? h('code', {}, JSON.stringify(v)) : String(v));
     const body = h('tbody', {}, rows.map((r) => {
@@ -343,9 +345,9 @@
         ...keyCols.map((c) => h('td', { class: 'k mono' }, r.segments?.[c] ?? r.key)),
         ...enumCols.map((c) => { const v = r.value[c]; return h('td', {}, v != null ? [h('span', { class: `st ${esc(v)}` }), String(v)] : h('span', { class: 'muted' }, '—')); }),
         ...fieldCols.map((c) => h('td', { class: 'ell', title: typeof get(r.value, c) === 'string' ? get(r.value, c) : '' }, r.snippet && c === fieldCols[0] ? h('span', { html: r.snippet }) : cell(get(r.value, c)))),
-        query ? h('td', { class: 'num mono', title: `fused ${r.score?.toFixed(4) ?? '—'}` }, scoreCell(r)) : null,
-        h('td', {}, timeEl(r.observedAt)), h('td', {}, r.expiresAt ? timeEl(r.expiresAt, soon(r.expiresAt) ? 'soon' : '') : h('span', { class: 'muted' }, 'keep')),
-        h('td', { class: 'num mono' }, r.revision), h('td', { class: 'mono muted' }, r.writer),
+        query ? h('td', { class: 'mono' }, scoreCell(r, meta.mode)) : null,
+        h('td', {}, timeEl(r.observedAt)), query ? null : h('td', {}, r.expiresAt ? timeEl(r.expiresAt, soon(r.expiresAt) ? 'soon' : '') : h('span', { class: 'muted' }, 'keep')),
+        h('td', { class: 'num mono' }, r.revision), query ? null : h('td', { class: 'mono muted ell' }, r.writer),
         h('td', { onclick: (e) => e.stopPropagation() }, deleteControl(`Delete ${r.key}`, async () => { await api(`/api/v1/boards/${encodeURIComponent(board)}/records/${encodeURIComponent(r.key)}`, { method: 'DELETE' }); tr.remove(); boardCache = {}; return 1; })));
       tr.addEventListener('click', () => { [...body.children].forEach((x) => x.classList.remove('sel')); tr.classList.add('sel'); openDrawer(board, def, r); });
       return tr;
@@ -356,12 +358,15 @@
     el.replaceChildren(...[tools, chips.children.length ? chips : null, rows.length ? table : h('div', { class: 'empty' }, query ? 'No matches.' : 'No live records here.'), pager].filter(Boolean));
   }
 
-  // Search score cell: cosine similarity for vector hits, full-text rank for text hits, both when both matched.
-  function scoreCell(r) {
-    const parts = [];
-    if (r.similarity != null) parts.push(h('span', { class: 'sc', title: 'cosine similarity' }, 'sim ', h('b', {}, r.similarity.toFixed(2))));
-    if (r.rank != null) parts.push(h('span', { class: 'sc', title: 'full-text rank' }, 'text ', h('b', {}, r.rank.toFixed(2))));
-    return parts.length ? parts : (r.score?.toFixed(3) ?? '—');
+  // Search score cell. Hybrid: fused 0-1 (1 = first in both lists) on top, then the parts that produced it.
+  // Full-text only: the ts_rank_cd value. A part that did not match shows as "—" so you can see which side carried the hit.
+  function scoreCell(r, mode) {
+    const n = (v, d = 2) => (v == null ? '—' : v.toFixed(d));
+    if (mode !== 'hybrid') return h('div', { class: 'scores' }, h('span', { class: 'sc' }, 'text ', h('b', {}, n(r.rank ?? r.score))));
+    return h('div', { class: 'scores' },
+      h('span', { class: 'sc main', title: 'hybrid: reciprocal-rank fusion, 1 = first in both lists' }, 'hybrid ', h('b', {}, n(r.score))),
+      h('span', { class: 'sc', title: 'cosine similarity of the embedding' }, 'sim ', h('b', {}, n(r.similarity))),
+      h('span', { class: 'sc', title: 'full-text rank (ts_rank_cd)' }, 'text ', h('b', {}, n(r.rank))));
   }
 
   // Inline two-step delete: button → "Delete N? [Yes] [No]". No browser dialogs.

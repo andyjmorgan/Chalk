@@ -136,6 +136,7 @@ input:focus, select:focus { border-color: color-mix(in srgb, var(--accent) 65%, 
 .tabs a:hover { background: var(--hover); color: var(--ink); }
 
 .split { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 16px; align-items: start; }
+.split.solo { grid-template-columns: minmax(0, 1fr); }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
 .tree { padding: 8px 6px; max-height: calc(100vh - 170px); overflow: auto; }
 .tnode { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 5px; cursor: pointer; white-space: nowrap; }
@@ -165,10 +166,15 @@ tbody tr { cursor: pointer; }
 tbody tr:hover { background: var(--hover); }
 tbody tr.sel { background: var(--sel); }
 td.num { text-align: right; }
-td .sc { display: inline-block; margin-left: 8px; color: var(--muted); font-size: 12px; white-space: nowrap; }
+td .scores { display: flex; flex-direction: column; gap: 1px; line-height: 1.3; }
+td .sc { color: var(--muted); font-size: 11.5px; white-space: nowrap; }
+td .sc.main { font-size: 12.5px; }
 td .sc b { color: var(--ink); font-weight: 600; }
-td.k { white-space: nowrap; max-width: 340px; overflow: hidden; text-overflow: ellipsis; }
-td.ell { max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+td.k, td.ell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Fixed layout keeps the table inside the panel: flexible columns share what is left after the fixed ones. */
+.tblwrap table { width: 100%; table-layout: fixed; }
+.tblwrap td { overflow: hidden; text-overflow: ellipsis; }
+th.w-score { width: 150px; } th.w-time { width: 96px; } th.w-rev { width: 44px; } th.w-writer { width: 120px; } th.w-act { width: 64px; } th.w-enum { width: 110px; }
 .muted { color: var(--muted); }
 .soon { color: var(--warn); }
 .empty { padding: 28px; color: var(--muted); text-align: center; }
