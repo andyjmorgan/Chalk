@@ -44,6 +44,7 @@
     moon: '<path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/>',
     panelClose: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="m16 15-3-3 3-3"/>',
     panelOpen: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="m14 9 3 3-3 3"/>',
+    chevronRight: '<path d="m9 18 6-6-6-6"/>',
     clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6h4"/>',
     history: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
   }).map(([k, v]) => [k, `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${v}</svg>`]));
@@ -62,15 +63,10 @@
   $('#openNav').addEventListener('click', () => openNav(true));
   $('#closeNav').addEventListener('click', () => openNav(false));
   $('#scrim').addEventListener('click', () => openNav(false));
-  const tints = ['c-accent', 'c-warn', 'c-plum', 'c-info', 'c-ok'];
-  function renderNav(boards = []) {
+  function renderNav() {
     const item = (href, name, ic, tint) => h('a', { href, title: name, 'aria-label': name }, icon(ic, tint), h('span', {}, name));
-    // Boards get a two-letter monogram instead of a shared icon so the collapsed rail still tells them apart.
-    const monogram = (name) => { const w = name.split(/[^a-z0-9]+/i).filter(Boolean); return ((w.length > 1 ? w[0][0] + w[1][0] : name.slice(0, 2)) || '?').toUpperCase(); };
-    const boardItem = (href, name, tint) => h('a', { href, title: name, 'aria-label': name }, h('span', { class: `mg ${tint}`, 'aria-hidden': true }, monogram(name)), h('span', {}, name));
     const groups = [
-      h('div', { class: 'group' }, item('#/', 'Overview', 'box', 'c-accent')),
-      boards.length ? h('div', { class: 'group' }, h('div', { class: 'sep', 'aria-hidden': true }), h('p', { class: 'glabel', 'aria-hidden': true }, 'Boards'), ...boards.map((b, i) => boardItem(`#/b/${encodeURIComponent(b)}`, b, tints[i % tints.length]))) : null,
+      h('div', { class: 'group' }, item('#/', 'Boards', 'list', 'c-accent')),
       h('div', { class: 'group' }, h('div', { class: 'sep', 'aria-hidden': true }), h('p', { class: 'glabel', 'aria-hidden': true }, 'Auth'), item('#/keys', 'API keys', 'key', 'c-ok')),
     ];
     $('#nav').replaceChildren(...groups.filter(Boolean));
@@ -80,7 +76,7 @@
     const hash = location.hash || '#/';
     for (const a of $('#nav').querySelectorAll('a')) {
       const href = a.getAttribute('href');
-      a.classList.toggle('on', href === '#/' ? hash === '#/' || hash === '' : hash === href || hash.startsWith(href + '/') || hash.startsWith(href + '?'));
+      a.classList.toggle('on', href === '#/' ? hash === '#/' || hash === '' || hash.startsWith('#/b/') : hash === href || hash.startsWith(href + '/') || hash.startsWith(href + '?'));
     }
   }
   const pageHeader = (title, description, actions = null, eyebrow = null) => h('div', { class: 'ph' },
@@ -198,7 +194,12 @@
     const qs = sp.toString();
     return '#/' + parts.map(encodeURIComponent).join('/') + (qs ? '?' + qs : '');
   };
-  const setCrumbs = () => {};
+  // Breadcrumb trail for board pages: Boards › board › (prefix | tab). The last item is plain text.
+  let crumbEl = null;
+  const setCrumbs = (...items) => {
+    const parts = items.filter(Boolean).flatMap((x, i) => (i ? [h('span', { class: 'sepc', 'aria-hidden': true }, icon('chevronRight')), x] : [x]));
+    crumbEl = h('nav', { class: 'crumbs', 'aria-label': 'Breadcrumb' }, ...parts);
+  };
   async function route() {
     if (!apiKey && !T.get()) return showLogin();
     const { parts, q } = parse();
@@ -247,11 +248,11 @@
     const def = await describe(board);
     const prefix = q.get('prefix') || '', query = q.get('q') || '';
     const filters = q.getAll('filter').filter(Boolean);
-    setCrumbs(h('a', { href: '#/' }, 'Boards'), h('a', { href: link(['b', board]) }, board), prefix ? h('span', { class: 'mono' }, prefix) : null);
+    setCrumbs(h('a', { href: '#/' }, 'Boards'), prefix ? h('a', { href: link(['b', board]) }, board) : h('span', {}, board), prefix ? h('span', { class: 'mono' }, prefix) : null);
     const lastSeenKey = `chalk.seen.${board}`;
     const since = store.get(lastSeenKey, null);
 
-    const bar = h('div', { class: 'bar' }, h('h1', {}, board), h('span', { class: 'meta' }, def.description), h('span', { class: 'meta mono' }, `ttl ${def.ttl || 'keep'} · ${def.counts.live} live`), h('div', { class: 'spacer' }), tabs(board, 'records', prefix));
+    const bar = h('div', { class: 'bar' }, crumbEl, h('h1', {}, board), h('span', { class: 'meta' }, def.description), h('span', { class: 'meta mono' }, `ttl ${def.ttl || 'keep'} · ${def.counts.live} live`), h('div', { class: 'spacer' }), tabs(board, 'records', prefix));
     const treeEl = h('div', { class: 'panel tree' });
     const tableEl = h('div', { class: 'panel' });
     // Searching: results take the full width; the key tree only matters when browsing.
@@ -414,12 +415,12 @@
   async function viewChanges(board, q) {
     const def = await describe(board);
     const prefix = q.get('prefix') || '', kinds = q.get('kind') || '', days = Number(q.get('days') || 1);
-    setCrumbs(h('a', { href: '#/' }, 'Boards'), h('a', { href: link(['b', board]) }, board), 'Changes');
+    setCrumbs(h('a', { href: '#/' }, 'Boards'), h('a', { href: link(['b', board]) }, board), h('span', {}, 'Changes'));
     const since = new Date(Date.now() - days * 86400e3).toISOString();
     const sel = (name, val, opts) => { const s = h('select', { onchange: () => (location.hash = link(['b', board, 'changes'], { prefix, kind: kinds, days, [name]: s.value })) }); for (const [v, l] of opts) s.append(h('option', { value: v, selected: String(v) === String(val) }, l)); return s; };
     const prefixIn = h('input', { class: 'mono', placeholder: 'prefix, e.g. office/', value: prefix });
     prefixIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') location.hash = link(['b', board, 'changes'], { prefix: prefixIn.value.trim(), kind: kinds, days }); });
-    const bar = h('div', { class: 'bar' }, h('h1', {}, board), h('span', { class: 'meta' }, 'what the agents decided'), h('div', { class: 'spacer' }), tabs(board, 'changes', prefix));
+    const bar = h('div', { class: 'bar' }, crumbEl, h('h1', {}, board), h('span', { class: 'meta' }, 'what the agents decided'), h('div', { class: 'spacer' }), tabs(board, 'changes', prefix));
     const tools = h('div', { class: 'tools' }, sel('days', days, [[1, 'last 24h'], [3, 'last 3 days'], [7, 'last 7 days'], [30, 'last 30 days']]),
       sel('kind', kinds, [['', 'all kinds'], ['created', 'created'], ['changed', 'changed'], ['expired', 'expired'], ['deleted', 'deleted']]), prefixIn);
     const feed = h('div', { class: 'feed' }, h('div', { class: 'empty' }, 'Loading…'));
@@ -452,8 +453,8 @@
   // ---- expiring ----
   async function viewExpiring(board) {
     const def = await describe(board);
-    setCrumbs(h('a', { href: '#/' }, 'Boards'), h('a', { href: link(['b', board]) }, board), 'Expiring');
-    const bar = h('div', { class: 'bar' }, h('h1', {}, board), h('span', { class: 'meta' }, 'live records the sweep will remove within 24 hours'), h('div', { class: 'spacer' }), tabs(board, 'expiring', ''));
+    setCrumbs(h('a', { href: '#/' }, 'Boards'), h('a', { href: link(['b', board]) }, board), h('span', {}, 'Expiring'));
+    const bar = h('div', { class: 'bar' }, crumbEl, h('h1', {}, board), h('span', { class: 'meta' }, 'live records the sweep will remove within 24 hours'), h('div', { class: 'spacer' }), tabs(board, 'expiring', ''));
     const panel = h('div', { class: 'panel' }, h('div', { class: 'empty' }, 'Loading…'));
     app.replaceChildren(bar, panel);
     const { data, meta } = await api(`/api/v1/boards/${encodeURIComponent(board)}/records?expiringWithin=24h&sort=expiresAt&limit=500`);
