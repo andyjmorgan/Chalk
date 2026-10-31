@@ -53,8 +53,9 @@ public static class RestEndpoints
         api.MapGet("/me", async (HttpContext ctx, Store store, CancellationToken ct) =>
         {
             var p = ctx.Principal();
+            if (p.IsUser) await store.UpsertUserAsync(p, ct);
             var boards = p.Read ? (await store.ListBoardsAsync(p, ct)).Select(b => ((dynamic)b).name as string).ToArray() : [];
-            return Ok(new { principal = p.Display, user = p.UserId, kind = p.Display.StartsWith("key:") ? "key" : "user", scopes = p.Scopes(), boards, boardScope = p.Boards });
+            return Ok(new { principal = p.Display, user = p.UserId, kind = p.IsUser ? "user" : "key", name = p.Name, email = p.Email, picture = p.Picture, scopes = p.Scopes(), boards, boardScope = p.Boards, canManageKeys = p.IsUser || p.Admin });
         });
 
         api.MapGet("/boards", async (HttpContext ctx, Store store, CancellationToken ct) =>
@@ -169,8 +170,9 @@ public static class RestEndpoints
         {
             var o = body as JsonObject ?? throw ChalkException.BadRequest("body must be an object");
             var boards = o["boards"] is JsonArray ba ? ba.Select(x => x!.GetValue<string>()).ToArray() : null;
+            DateTimeOffset? expiresAt = o["expiresAt"] is JsonValue xa ? ParseTime(xa.GetValue<string>(), "expiresAt") : o["expiresIn"] is JsonValue xi ? DateTimeOffset.UtcNow + Durations.Parse(xi.GetValue<string>()) : null;
             var created = await store.CreateKeyAsync(ctx.Principal(), o["name"]?.GetValue<string>() ?? "", o["read"]?.GetValue<bool>() ?? true, o["write"]?.GetValue<bool>() ?? false,
-                o["delete"]?.GetValue<bool>() ?? false, o["admin"]?.GetValue<bool>() ?? false, boards, ct);
+                o["delete"]?.GetValue<bool>() ?? false, o["admin"]?.GetValue<bool>() ?? false, boards, expiresAt, ct);
             return Results.Json(new { data = created }, Json.Options, statusCode: 201);
         });
         api.MapDelete("/keys/{id:guid}", async (HttpContext ctx, Store store, Guid id, CancellationToken ct) =>

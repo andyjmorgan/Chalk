@@ -46,9 +46,21 @@ public sealed class Store(NpgsqlDataSource db, ILogger<Store> log)
 
     private static byte[] Hash(string key) => SHA256.HashData(Encoding.UTF8.GetBytes(key));
 
-    private static async Task InsertKeyAsync(NpgsqlConnection conn, string user, string name, string key, Dictionary<string, object?> scopes, CancellationToken ct)
+    /// <summary>Record who a signed-in user is (display/email) and when they were last here. Called from /me.</summary>
+    public async Task UpsertUserAsync(Principal p, CancellationToken ct)
     {
-        await using var cmd = new NpgsqlCommand("INSERT INTO api_keys(id, user_id, name, prefix, hash, scopes) VALUES (@id, @u, @n, @p, @h, @s)", conn);
+        await using var conn = await db.OpenConnectionAsync(ct);
+        await using var cmd = new NpgsqlCommand("INSERT INTO users(id, display, email, last_seen_at) VALUES (@u, @d, @e, now()) ON CONFLICT (id) DO UPDATE SET display = EXCLUDED.display, email = COALESCE(EXCLUDED.email, users.email), last_seen_at = now()", conn);
+        cmd.Parameters.AddWithValue("u", p.UserId);
+        cmd.Parameters.AddWithValue("d", p.Name ?? p.Display);
+        cmd.Parameters.AddWithValue("e", (object?)p.Email ?? DBNull.Value);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private static async Task InsertKeyAsync(NpgsqlConnection conn, string user, string name, string key, Dictionary<string, object?> scopes, CancellationToken ct, DateTimeOffset? expiresAt = null)
+    {
+        await using var cmd = new NpgsqlCommand("INSERT INTO api_keys(id, user_id, name, prefix, hash, scopes, expires_at) VALUES (@id, @u, @n, @p, @h, @s, @x)", conn);
+        cmd.Parameters.AddWithValue("x", (object?)expiresAt?.UtcDateTime ?? DBNull.Value);
         cmd.Parameters.AddWithValue("id", Guid.NewGuid());
         cmd.Parameters.AddWithValue("u", user);
         cmd.Parameters.AddWithValue("n", name);
@@ -63,7 +75,7 @@ public sealed class Store(NpgsqlDataSource db, ILogger<Store> log)
     public async Task<Principal?> AuthenticateAsync(string key, CancellationToken ct)
     {
         await using var conn = await db.OpenConnectionAsync(ct);
-        await using var cmd = new NpgsqlCommand("UPDATE api_keys SET last_used_at = now() WHERE hash = @h AND enabled RETURNING user_id, name, scopes", conn);
+        await using var cmd = new NpgsqlCommand("UPDATE api_keys SET last_used_at = now() WHERE hash = @h AND enabled AND (expires_at IS NULL OR expires_at > now()) RETURNING user_id, name, scopes", conn);
         cmd.Parameters.AddWithValue("h", Hash(key));
         await using var r = await cmd.ExecuteReaderAsync(ct);
         if (!await r.ReadAsync(ct)) return null;
@@ -76,41 +88,43 @@ public sealed class Store(NpgsqlDataSource db, ILogger<Store> log)
             scopes["delete"]?.GetValue<bool>() ?? false, scopes["admin"]?.GetValue<bool>() ?? false, boards);
     }
 
-    public async Task<object> CreateKeyAsync(Principal p, string name, bool read, bool write, bool delete, bool admin, string[]? boards, CancellationToken ct)
+    public async Task<object> CreateKeyAsync(Principal p, string name, bool read, bool write, bool delete, bool admin, string[]? boards, DateTimeOffset? expiresAt, CancellationToken ct)
     {
-        p.RequireAdmin();
+        p.RequireKeys();
         if (string.IsNullOrWhiteSpace(name)) throw ChalkException.BadRequest("name is required");
+        if (expiresAt is not null && expiresAt <= DateTimeOffset.UtcNow) throw ChalkException.BadRequest("expiresAt must be in the future");
+        if (admin && !p.Admin && !p.IsUser) throw ChalkException.Forbidden("only a signed-in user or an admin key may mint an admin key");
         var key = "chk_" + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(24));
         await using var conn = await db.OpenConnectionAsync(ct);
         await EnsureUserAsync(conn, p.UserId, ct);
         try
         {
-            await InsertKeyAsync(conn, p.UserId, name.Trim(), key, new Dictionary<string, object?> { ["read"] = read, ["write"] = write, ["delete"] = delete, ["admin"] = admin, ["boards"] = boards }, ct);
+            await InsertKeyAsync(conn, p.UserId, name.Trim(), key, new Dictionary<string, object?> { ["read"] = read, ["write"] = write, ["delete"] = delete, ["admin"] = admin, ["boards"] = boards }, ct, expiresAt);
         }
         catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.UniqueViolation)
         {
             throw ChalkException.Conflict($"a key named '{name}' already exists");
         }
-        await AuditAsync(conn, p.Display, "key.create", new { name, read, write, delete, admin, boards }, ct);
-        return new { name = name.Trim(), key, prefix = key[..12], scopes = new { read, write, delete, admin, boards } };
+        await AuditAsync(conn, p.Display, "key.create", new { name, read, write, delete, admin, boards, expiresAt }, ct);
+        return new { name = name.Trim(), key, prefix = key[..12], scopes = new { read, write, delete, admin, boards }, expiresAt };
     }
 
     public async Task<List<object>> ListKeysAsync(Principal p, CancellationToken ct)
     {
-        p.RequireAdmin();
+        p.RequireKeys();
         await using var conn = await db.OpenConnectionAsync(ct);
-        await using var cmd = new NpgsqlCommand("SELECT id, name, prefix, scopes, enabled, created_at, last_used_at FROM api_keys WHERE user_id = @u ORDER BY created_at", conn);
+        await using var cmd = new NpgsqlCommand("SELECT id, name, prefix, scopes, enabled, created_at, last_used_at, expires_at FROM api_keys WHERE user_id = @u ORDER BY created_at", conn);
         cmd.Parameters.AddWithValue("u", p.UserId);
         var list = new List<object>();
         await using var r = await cmd.ExecuteReaderAsync(ct);
         while (await r.ReadAsync(ct))
-            list.Add(new { id = r.GetGuid(0), name = r.GetString(1), prefix = r.GetString(2), scopes = JsonNode.Parse(r.GetString(3)), enabled = r.GetBoolean(4), createdAt = r.GetFieldValue<DateTime>(5), lastUsedAt = r.IsDBNull(6) ? null : (DateTime?)r.GetFieldValue<DateTime>(6) });
+            list.Add(new { id = r.GetGuid(0), name = r.GetString(1), prefix = r.GetString(2), scopes = JsonNode.Parse(r.GetString(3)), enabled = r.GetBoolean(4), createdAt = r.GetFieldValue<DateTime>(5), lastUsedAt = r.IsDBNull(6) ? null : (DateTime?)r.GetFieldValue<DateTime>(6), expiresAt = r.IsDBNull(7) ? null : (DateTime?)r.GetFieldValue<DateTime>(7), expired = !r.IsDBNull(7) && r.GetFieldValue<DateTime>(7) <= DateTime.UtcNow });
         return list;
     }
 
     public async Task RevokeKeyAsync(Principal p, Guid id, CancellationToken ct)
     {
-        p.RequireAdmin();
+        p.RequireKeys();
         await using var conn = await db.OpenConnectionAsync(ct);
         await using var cmd = new NpgsqlCommand("UPDATE api_keys SET enabled = false WHERE id = @id AND user_id = @u", conn);
         cmd.Parameters.AddWithValue("id", id);

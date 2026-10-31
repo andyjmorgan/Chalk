@@ -53,7 +53,7 @@ Do not write prose, summaries of what you did, or lessons learned. If a value wa
 ## Access
 
 - MCP: `https://chalk.andrewmorgan.ai/mcp` (Streamable HTTP). REST: `https://chalk.andrewmorgan.ai/api/v1`, OpenAPI at `/openapi/v1.json`.
-- Auth: `X-Api-Key: chk_…` or `Authorization: Bearer chk_…`. Keys live in the DonkeyWork Vault under `chalk`.
+- Auth: `X-Api-Key: chk_…` or `Authorization: Bearer chk_…`. Keys are minted by a signed-in person on the Chalk UI (account menu → API keys) and act as that person on their boards; the admin key lives in the DonkeyWork Vault under `chalk`. Keys may carry a board list and an expiry; a 401 means the key was revoked or expired, not that Chalk is down.
 - From Bash: `curl -s -H "X-Api-Key: $CHALK_API_KEY" https://chalk.andrewmorgan.ai/api/v1/boards`.
 
 ### REST shapes

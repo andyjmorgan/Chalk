@@ -32,24 +32,98 @@
   const soon = (iso) => iso && new Date(iso).getTime() - Date.now() < 86400e3;
 
   // ---- auth / api ----
+  // Two credentials: a Keycloak session (tokens in localStorage, refreshed in place) or a pasted API key.
+  const T = { get: () => store.get('chalk.tokens', null), set: (t) => store.set('chalk.tokens', t), clear: () => store.del('chalk.tokens') };
   let apiKey = store.get('chalk.apiKey', null);
-  const showLogin = (msg = '') => { $('#loginErr').textContent = msg; $('#login').classList.remove('hidden'); $('#apiKey').focus(); };
+  let authCfg = { enabled: false, providers: [] };
+  const jwtExp = (tok) => { try { return JSON.parse(atob(tok.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).exp * 1000; } catch { return 0; } };
+  let refreshing = null;
+  function refresh() {
+    const t = T.get(); if (!t?.refresh_token) return Promise.resolve(false);
+    return refreshing ||= (async () => {
+      try {
+        const r = await fetch('/api/v1/auth/refresh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ refreshToken: t.refresh_token }) });
+        if (!r.ok) return false;
+        T.set({ ...t, ...(await r.json()) }); return true;
+      } catch { return false; } finally { refreshing = null; }
+    })();
+  }
+  async function authHeader() {
+    if (apiKey) return { 'X-Api-Key': apiKey };
+    const t = T.get(); if (!t?.access_token) return null;
+    if (jwtExp(t.access_token) - Date.now() < 30e3 && !(await refresh())) return null;
+    return { Authorization: `Bearer ${T.get().access_token}` };
+  }
+  const showLogin = (msg = '') => { $('#loginErr').textContent = msg; $('#login').classList.remove('hidden'); if (!authCfg.enabled) $('#apiKey').focus(); };
   const hideLogin = () => $('#login').classList.add('hidden');
-  async function api(path, opts = {}) {
-    if (!apiKey) { showLogin(); throw new Error('no key'); }
-    const r = await fetch(path, { ...opts, headers: { 'X-Api-Key': apiKey, ...(opts.body ? { 'Content-Type': 'application/json' } : {}), ...(opts.headers || {}) } });
-    if (r.status === 401) { showLogin('That key was rejected.'); throw new Error('unauthorized'); }
+  function forgetLocal() { apiKey = null; store.del('chalk.apiKey'); const t = T.get(); T.clear(); $('#user').replaceChildren(); return t; }
+  async function api(path, opts = {}, retry = true) {
+    const hdr = await authHeader();
+    if (!hdr) { showLogin(); throw new Error('no key'); }
+    const r = await fetch(path, { ...opts, headers: { ...hdr, ...(opts.body ? { 'Content-Type': 'application/json' } : {}), ...(opts.headers || {}) } });
+    if (r.status === 401) {
+      if (!apiKey && retry && await refresh()) return api(path, opts, false);
+      const wasKey = !!apiKey; forgetLocal();
+      showLogin(wasKey ? 'That key was rejected.' : 'Your session ended. Sign in again.'); throw new Error('unauthorized');
+    }
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw Object.assign(new Error(j.error?.message || r.statusText), { code: j.error?.code, status: r.status });
     return j;
   }
+
+  const IDP = {
+    google: ['Google', '<svg viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>'],
+    github: ['GitHub', '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .7a11.5 11.5 0 0 0-3.64 22.4c.58.1.79-.25.79-.56v-2.23c-3.22.7-3.9-1.37-3.9-1.37-.52-1.34-1.28-1.69-1.28-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.57-.29-5.27-1.28-5.27-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.47.11-3.05 0 0 .97-.31 3.16 1.18a10.9 10.9 0 0 1 5.76 0c2.19-1.49 3.16-1.18 3.16-1.18.63 1.58.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.71 5.38-5.29 5.67.42.36.79 1.06.79 2.14v3.18c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .7Z"/></svg>'],
+    microsoft: ['Microsoft', '<svg viewBox="0 0 21 21"><rect x="1" y="1" width="9" height="9" fill="#F25022"/><rect x="11" y="1" width="9" height="9" fill="#7FBA00"/><rect x="1" y="11" width="9" height="9" fill="#00A4EF"/><rect x="11" y="11" width="9" height="9" fill="#FFB900"/></svg>'],
+    apple: ['Apple', '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.05 20.28c-.98.95-2.05.88-3.08.4-1.09-.5-2.08-.48-3.24 0-1.44.62-2.2.44-3.06-.4C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/></svg>'],
+  };
+  async function loadAuthConfig() {
+    try { authCfg = await (await fetch('/api/v1/auth/config')).json(); } catch { authCfg = { enabled: false, providers: [] }; }
+    const box = $('#idps'), kl = $('#keyLogin');
+    if (!authCfg.enabled) { box.replaceChildren(); kl.open = true; kl.classList.add('only'); return; }
+    kl.classList.remove('only');
+    box.replaceChildren(...authCfg.providers.filter((p) => IDP[p]).map((p) => h('button', {
+      class: 'idp', type: 'button', onclick: () => { store.set('chalk.return', location.hash && !location.hash.startsWith('#error') ? location.hash : '#/'); location.assign(`/api/v1/auth/login?idpHint=${encodeURIComponent(p)}`); },
+    }, h('span', { class: 'ico', html: IDP[p][1] }), `Continue with ${IDP[p][0]}`)));
+  }
+  // The server redirects back to /#token_response=… (or /#error=…); the fragment never reaches a server log.
+  function consumeCallback() {
+    const m = location.hash.match(/^#(token_response|error)=(.*)$/);
+    if (!m) return false;
+    history.replaceState(null, '', location.pathname);
+    if (m[1] === 'error') { showLogin(`Sign-in failed: ${decodeURIComponent(m[2])}`); return true; }
+    try { T.set(JSON.parse(decodeURIComponent(m[2]))); apiKey = null; store.del('chalk.apiKey'); }
+    catch { showLogin('The identity response could not be read.'); return true; }
+    const back = store.get('chalk.return', '#/'); store.del('chalk.return');
+    history.replaceState(null, '', location.pathname + (back === '#/' ? '' : back));
+    return false;
+  }
+  function signOut() {
+    const t = forgetLocal();
+    if (authCfg.enabled && t) location.assign(`/api/v1/auth/logout${t.id_token ? `?idTokenHint=${encodeURIComponent(t.id_token)}` : ''}`);
+    else { location.hash = '#/'; showLogin(); }
+  }
+  let me = null;
+  async function whoami() {
+    me = (await api('/api/v1/me')).data;
+    const label = me.kind === 'user' ? (me.name || me.user) : me.principal;
+    const avatar = h('span', { class: 'avatar' }, me.picture ? h('img', { src: me.picture, alt: '', referrerpolicy: 'no-referrer' }) : (label.replace(/^key:/, '')[0] || '?').toUpperCase());
+    const btn = h('button', { class: 'ubtn', 'aria-haspopup': 'menu', 'aria-label': 'Account' }, avatar, h('span', { class: 'uname' }, label), h('span', { class: 'muted' }, '▾'));
+    const menu = h('div', { class: 'menu hidden', role: 'menu' },
+      h('div', { class: 'mhead' }, h('b', {}, label), h('span', { class: `muted ${me.email ? '' : 'mono'}` }, me.email || me.scopes.join(' '))),
+      me.canManageKeys ? h('a', { href: '#/keys', role: 'menuitem', onclick: () => menu.classList.add('hidden') }, 'API keys') : null,
+      h('button', { role: 'menuitem', onclick: signOut }, me.kind === 'user' ? 'Sign out' : 'Forget this key'));
+    btn.addEventListener('click', (e) => { e.stopPropagation(); menu.classList.toggle('hidden'); });
+    $('#user').replaceChildren(btn, menu);
+    return me;
+  }
+  document.addEventListener('click', () => $('#user .menu')?.classList.add('hidden'));
   $('#loginForm').addEventListener('submit', async (e) => {
     e.preventDefault();
-    apiKey = $('#apiKey').value.trim();
-    try { const me = await api('/api/v1/me'); store.set('chalk.apiKey', apiKey); hideLogin(); $('#who').textContent = me.data.principal; route(); }
+    apiKey = $('#apiKey').value.trim(); T.clear();
+    try { await whoami(); store.set('chalk.apiKey', apiKey); $('#apiKey').value = ''; hideLogin(); route(); }
     catch (err) { apiKey = null; showLogin(err.message === 'unauthorized' ? 'That key was rejected.' : err.message); }
   });
-  $('#logout').addEventListener('click', () => { store.del('chalk.apiKey'); apiKey = null; $('#who').textContent = ''; showLogin(); });
   $('#theme').addEventListener('click', () => {
     const cur = document.documentElement.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
     const next = cur === 'dark' ? 'light' : 'dark';
@@ -67,11 +141,12 @@
   const link = (parts, q = {}) => '#/' + parts.map(encodeURIComponent).join('/') + (Object.keys(q).length ? '?' + new URLSearchParams(Object.fromEntries(Object.entries(q).filter(([, v]) => v != null && v !== ''))) : '');
   const setCrumbs = (...items) => { crumbs.replaceChildren(...items.flatMap((it, i) => [i ? h('span', {}, '›') : null, typeof it === 'string' ? h('span', {}, it) : it]).filter(Boolean)); };
   async function route() {
-    if (!apiKey) return showLogin();
+    if (!apiKey && !T.get()) return showLogin();
     const { parts, q } = parse();
     closeDrawer();
     try {
       if (parts.length === 0) await viewHome();
+      else if (parts[0] === 'keys') await viewKeys();
       else if (parts[0] === 'b' && parts[1]) {
         const board = decodeURIComponent(parts[1]);
         if (parts[2] === 'changes') await viewChanges(board, q);
@@ -317,10 +392,83 @@
       h('div', { class: 'tblwrap' }, h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'key'), ...fieldCols.map((c) => h('th', {}, c)), h('th', {}, 'expires'), h('th', {}, 'observed'), h('th', { class: 'num' }, 'rev'), h('th', {}, 'writer'))), body)));
   }
 
+  // ---- API keys (minted by the signed-in user; shown once) ----
+  async function viewKeys() {
+    if (!me) await whoami();
+    setCrumbs(h('a', { href: '#/' }, 'Boards'), 'API keys');
+    const bar = h('div', { class: 'bar' }, h('h1', {}, 'API keys'), h('span', { class: 'meta' }, 'keys act as you on your boards · give each agent the narrowest scope that works'));
+    const panel = h('div', { class: 'panel' }, h('div', { class: 'empty' }, 'Loading…'));
+    app.replaceChildren(bar, panel);
+    const base = location.origin;
+    const nameIn = h('input', { placeholder: 'e.g. news-routine', required: true, maxlength: 64 });
+    const sc = { read: h('input', { type: 'checkbox', checked: true }), write: h('input', { type: 'checkbox', checked: true }), delete: h('input', { type: 'checkbox' }), admin: h('input', { type: 'checkbox' }) };
+    const boardsIn = h('input', { placeholder: 'all boards', title: 'Comma-separated board names to restrict this key to' });
+    const expSel = h('select', {}, ...[['', 'never'], ['7d', '7 days'], ['30d', '30 days'], ['90d', '90 days'], ['365d', '1 year']].map(([v, t]) => h('option', { value: v }, t)));
+    const submit = h('button', { class: 'primary', type: 'submit' }, 'Create key');
+    const form = h('form', { class: 'form' },
+      h('label', {}, 'Name', nameIn),
+      h('label', {}, 'Scopes', h('div', { class: 'scopes' }, ...Object.entries(sc).map(([k, el]) => h('label', {}, el, k)))),
+      h('label', {}, 'Boards', boardsIn),
+      h('label', {}, 'Expires', expSel),
+      submit);
+    const reveal = h('div', {});
+    const tblwrap = h('div', { class: 'tblwrap' });
+    const help = h('div', { class: 'help' },
+      h('span', {}, 'Agents pass the key as ', h('code', {}, 'X-Api-Key'), ' or ', h('code', {}, 'Authorization: Bearer chk_…'), '. REST at ', h('code', {}, `${base}/api/v1`), ', MCP at ', h('code', {}, `${base}/mcp`), '.'),
+      h('span', {}, 'Claude Code: ', h('code', {}, `claude mcp add --transport http chalk ${base}/mcp --header "X-Api-Key: chk_…"`)));
+    panel.replaceChildren(form, reveal, tblwrap, help);
+
+    async function load() {
+      const { data } = await api('/api/v1/keys');
+      if (!data.length) return tblwrap.replaceChildren(h('div', { class: 'empty' }, 'No keys yet. Mint one above for each agent or routine.'));
+      const scopes = (k) => ['read', 'write', 'delete', 'admin'].filter((x) => k.scopes?.[x]).map((x) => h('span', { class: 'badge' }, x));
+      tblwrap.replaceChildren(h('table', {}, h('thead', {}, h('tr', {}, h('th', {}, 'name'), h('th', {}, 'prefix'), h('th', {}, 'scopes'), h('th', {}, 'boards'), h('th', {}, 'created'), h('th', {}, 'last used'), h('th', {}, 'expires'), h('th', {}, ''))),
+        h('tbody', {}, data.map((k) => {
+          const off = !k.enabled || k.expired;
+          const tr = h('tr', { class: off ? 'off' : '', style: 'cursor:default' }, h('td', {}, k.name), h('td', { class: 'mono' }, k.prefix + '…'), h('td', {}, ...scopes(k)),
+            h('td', { class: 'mono muted' }, k.scopes?.boards?.join(', ') || 'all'), h('td', {}, timeEl(k.createdAt)), h('td', {}, k.lastUsedAt ? timeEl(k.lastUsedAt) : h('span', { class: 'muted' }, 'never')),
+            h('td', {}, !k.enabled ? h('span', { class: 'badge fail' }, 'revoked') : k.expired ? h('span', { class: 'badge' }, 'expired') : k.expiresAt ? timeEl(k.expiresAt, soon(k.expiresAt) ? 'soon' : '') : h('span', { class: 'muted' }, 'never')),
+            h('td', {}, off ? null : revokeBtn(k)));
+          return tr;
+        }))));
+    }
+    function revokeBtn(k) {
+      const wrap = h('span', {});
+      const btn = h('button', { class: 'danger' }, 'Revoke');
+      btn.addEventListener('click', () => {
+        const yes = h('button', { class: 'danger' }, 'Revoke'), no = h('button', {}, 'Keep');
+        const box = h('span', { class: 'confirm' }, h('span', {}, `Agents using ${k.name} stop working.`), yes, no);
+        wrap.replaceChildren(box);
+        no.addEventListener('click', () => wrap.replaceChildren(btn));
+        yes.addEventListener('click', async () => { yes.disabled = true; yes.textContent = '…'; try { await api(`/api/v1/keys/${k.id}`, { method: 'DELETE' }); await load(); } catch (err) { box.replaceChildren(h('span', {}, err.message), no); } });
+      });
+      wrap.append(btn); return wrap;
+    }
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault(); submit.disabled = true;
+      const boards = boardsIn.value.split(',').map((x) => x.trim()).filter(Boolean);
+      try {
+        const { data } = await api('/api/v1/keys', { method: 'POST', body: JSON.stringify({ name: nameIn.value.trim(), read: sc.read.checked, write: sc.write.checked, delete: sc.delete.checked, admin: sc.admin.checked, boards: boards.length ? boards : null, expiresIn: expSel.value || undefined }) });
+        const code = h('code', { class: 'mono' }, data.key);
+        const copy = h('button', { class: 'primary' }, 'Copy');
+        copy.addEventListener('click', async () => { try { await navigator.clipboard.writeText(data.key); copy.textContent = 'Copied'; } catch { copy.textContent = 'Select and copy'; } });
+        reveal.replaceChildren(h('div', { class: 'reveal' },
+          h('div', {}, h('b', {}, `Key “${data.name}” created.`), ' Copy it now; it is shown once and stored only as a hash.'),
+          h('div', { class: 'row' }, code, copy, h('button', { onclick: () => reveal.replaceChildren() }, 'Done')),
+          h('pre', {}, `claude mcp add --transport http chalk ${base}/mcp --header "X-Api-Key: ${data.key}"`)));
+        nameIn.value = ''; await load();
+      } catch (err) { reveal.replaceChildren(h('div', { class: 'reveal' }, h('span', { class: 'err' }, err.message))); }
+      finally { submit.disabled = false; }
+    });
+    await load();
+  }
+
   // ---- boot ----
   (async () => {
-    if (!apiKey) return showLogin();
-    try { const me = await api('/api/v1/me'); $('#who').textContent = me.data.principal; hideLogin(); route(); }
+    await loadAuthConfig();
+    if (consumeCallback()) return;
+    if (!apiKey && !T.get()) return showLogin();
+    try { await whoami(); hideLogin(); route(); }
     catch (e) { /* login shown by api() */ }
   })();
 })();

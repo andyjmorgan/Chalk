@@ -24,11 +24,25 @@ curl -s -H 'X-Api-Key: chk_localdev' localhost:18080/api/v1/me
 ```
 
 Configuration (env): `ConnectionStrings__Chalk`, `Chalk__BootstrapApiKey` (seeds the first admin key when none exist),
-`Chalk__BootstrapUser` (default `andy`), `Chalk__PublicUrl`, `Embeddings__OllamaUrl`, `Sweep__IntervalSeconds` (default 300).
+`Chalk__BootstrapUser` (the owner's Keycloak subject), `Chalk__PublicUrl`, `Embeddings__OllamaUrl`, `Sweep__IntervalSeconds` (default 300).
+
+## Auth
+
+Two credentials, one `Smart` scheme that picks by shape:
+
+- **People sign in with Keycloak** (authorization code + PKCE; `OAuth__Enabled=true`, `OAuth__Authority`, `OAuth__Audience`, `OAuth__ClientId`,
+  optional `OAuth__InternalAuthority`, `OAuth__Providers`). The UI offers Google / GitHub / Microsoft / Apple via `kc_idp_hint`; the server
+  keeps the PKCE verifier in an HttpOnly cookie and hands tokens to the SPA in a URL fragment, which refreshes them in place.
+  A signed-in user is `user:<username>` with every scope on their own boards.
+- **Agents use API keys** (`X-Api-Key: chk_…` or `Authorization: Bearer chk_…`) minted by a signed-in user on the UI's *API keys* page
+  (`POST /api/v1/keys`: name, `read|write|delete|admin`, optional `boards`, optional `expiresIn`/`expiresAt`). Keys act as that user,
+  are shown once and stored hashed. A key with `chalk:admin` may also mint keys (the bootstrap path).
+- **MCP clients** get RFC 9728 discovery at `/.well-known/oauth-protected-resource` and a `WWW-Authenticate: Bearer resource_metadata=…`
+  challenge, so an OAuth-capable client can DCR against Keycloak; a plain Keycloak access token with `aud=chalk` is accepted on `/mcp` too.
 
 ## Design
 
 The design note lives in Obsidian (`Personal/Projects/Chalk/Notes/Chalk — design.md`). Decided and built here:
 keys are paths from the board's pointer list; bulk atomic upsert with touch-on-identical; events table behind
-`changes_since`; API-key auth with `chalk:read|write|delete|admin` scopes; UI is read-only plus delete.
-Deferred: OAuth via Keycloak, shares, CLI, cross-board search, value editing, MCP Skills extension handshake.
+`changes_since`; Keycloak sign-in for people, user-minted API keys with `chalk:read|write|delete|admin` scopes for agents; UI is read-only plus delete plus key management.
+Deferred: shares, CLI, cross-board search, value editing, MCP Skills extension handshake.

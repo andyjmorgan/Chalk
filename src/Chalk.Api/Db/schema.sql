@@ -20,6 +20,12 @@ CREATE TABLE IF NOT EXISTS api_keys (
   last_used_at timestamptz,
   UNIQUE (user_id, name)
 );
+ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS expires_at timestamptz;
+-- A name is unique among live keys only, so a revoked key's name can be reused.
+ALTER TABLE api_keys DROP CONSTRAINT IF EXISTS api_keys_user_id_name_key;
+CREATE UNIQUE INDEX IF NOT EXISTS api_keys_user_name_live ON api_keys (user_id, name) WHERE enabled;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email text;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen_at timestamptz;
 
 CREATE TABLE IF NOT EXISTS boards (
   id              uuid PRIMARY KEY,

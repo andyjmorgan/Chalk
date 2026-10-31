@@ -138,3 +138,44 @@ details summary { cursor: pointer; color: var(--muted); padding: 4px 10px; font-
   .stats { grid-template-columns: repeat(2, 1fr); }
   .app { padding: 16px 16px; }
 }
+
+/* ---- sign-in ---- */
+.card.auth { max-width: 380px; }
+.card.auth h1 { display: flex; align-items: center; gap: 8px; }
+.idps { display: grid; gap: 8px; margin: 14px 0 8px; }
+.idp { display: flex; align-items: center; gap: 12px; padding: 9px 12px; border-radius: 8px; font-weight: 500; text-align: left; }
+.idp .ico { width: 20px; height: 20px; display: inline-flex; flex: none; }
+.idp .ico svg { width: 20px; height: 20px; }
+#keyLogin { margin-top: 6px; }
+#keyLogin summary { color: var(--muted); font-size: 12.5px; padding: 4px 0; }
+#keyLogin.only summary { display: none; }
+#keyLogin form { margin-top: 8px; }
+#keyLogin form button { width: 100%; margin-top: 2px; }
+
+/* ---- user menu ---- */
+.user { position: relative; }
+.ubtn { display: flex; align-items: center; gap: 8px; border-color: transparent; background: transparent; padding: 2px 8px 2px 2px; }
+.ubtn:hover { background: var(--hover); }
+.avatar { width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); display: inline-grid; place-items: center; font-size: 12px; font-weight: 600; overflow: hidden; }
+.avatar img { width: 100%; height: 100%; object-fit: cover; }
+.uname { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu { position: absolute; right: 0; top: calc(100% + 6px); min-width: 220px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 30px rgba(0,0,0,.15); padding: 6px; z-index: 9; display: grid; }
+.menu .mhead { padding: 6px 10px 8px; border-bottom: 1px solid var(--line-soft); margin-bottom: 4px; display: grid; }
+.menu .mhead span { font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
+.menu a, .menu button { text-align: left; padding: 6px 10px; border-radius: 6px; border: 0; background: transparent; }
+.menu a:hover, .menu button:hover { background: var(--hover); }
+
+/* ---- keys page ---- */
+.form { display: grid; grid-template-columns: minmax(160px, 1.2fr) auto minmax(160px, 1fr) auto auto; gap: 10px; align-items: end; padding: 12px; border-bottom: 1px solid var(--line); }
+.form label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+.form label > input, .form label > select { width: 100%; }
+.scopes { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; padding: 6px 0; }
+.scopes label { display: inline-flex; gap: 5px; align-items: center; color: var(--ink); font-size: 13px; }
+.reveal { margin: 12px; padding: 12px 14px; border: 1px solid var(--accent); border-radius: 8px; background: var(--chip); display: grid; gap: 8px; }
+.reveal .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.reveal code { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; word-break: break-all; flex: 1; }
+.reveal pre { margin: 0; padding: 8px 10px; background: var(--panel); border-radius: 6px; font-size: 12px; white-space: pre-wrap; word-break: break-all; }
+tr.off td { opacity: .5; }
+.help { padding: 12px; color: var(--muted); border-top: 1px solid var(--line-soft); display: grid; gap: 6px; }
+.help code { background: var(--chip); padding: 1px 5px; border-radius: 4px; }
+@media (max-width: 900px) { .form { grid-template-columns: 1fr 1fr; } .uname { display: none; } }

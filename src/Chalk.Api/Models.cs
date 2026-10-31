@@ -27,6 +27,13 @@ public sealed record Principal(string UserId, string Display, bool Read, bool Wr
     public void RequireWrite() { if (!Write) throw ChalkException.Forbidden("scope chalk:write required"); }
     public void RequireDelete() { if (!Delete) throw ChalkException.Forbidden("scope chalk:delete required"); }
     public void RequireAdmin() { if (!Admin) throw ChalkException.Forbidden("scope chalk:admin required"); }
+    /// <summary>A signed-in human (Keycloak) rather than an API key or the sweep.</summary>
+    public bool IsUser => Display.StartsWith("user:", StringComparison.Ordinal);
+    public string? Name { get; init; }
+    public string? Email { get; init; }
+    public string? Picture { get; init; }
+    /// <summary>Keys are minted by signed-in users; a key with chalk:admin may also manage keys (bootstrap path).</summary>
+    public void RequireKeys() { if (!IsUser && !Admin) throw ChalkException.Forbidden("sign in, or use a key with chalk:admin, to manage API keys"); }
     public string[] Scopes()
     {
         var s = new List<string>();

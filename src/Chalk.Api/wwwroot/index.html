@@ -13,19 +13,24 @@
   <a class="brand" href="#/"><span class="mark"></span>Chalk</a>
   <nav id="crumbs" class="crumbs"></nav>
   <div class="spacer"></div>
-  <span id="who" class="who mono"></span>
+  <div id="user" class="user"></div>
   <button id="theme" class="icon" title="Toggle theme" aria-label="Toggle theme">◐</button>
-  <button id="logout" class="icon" title="Forget API key" aria-label="Forget API key">⏏</button>
 </header>
 <main id="app" class="app"></main>
 <div id="login" class="login hidden">
-  <form id="loginForm" class="card">
-    <h1>Chalk</h1>
-    <p>Short-lived records for agents. Paste an API key with <code>chalk:read</code> to review boards.</p>
-    <label>API key <input id="apiKey" class="mono" type="password" placeholder="chk_…" autocomplete="off" required></label>
-    <p id="loginErr" class="err"></p>
-    <button type="submit" class="primary">Open</button>
-  </form>
+  <div class="card auth">
+    <h1><span class="mark"></span>Chalk</h1>
+    <p>Short-lived records for agents. Sign in to review what they wrote and to mint the keys they write with.</p>
+    <div id="idps" class="idps" aria-label="Sign in"></div>
+    <p id="loginErr" class="err" role="alert"></p>
+    <details id="keyLogin">
+      <summary>Use an API key instead</summary>
+      <form id="loginForm">
+        <label>API key <input id="apiKey" class="mono" type="password" placeholder="chk_…" autocomplete="off" required></label>
+        <button type="submit" class="primary">Open</button>
+      </form>
+    </details>
+  </div>
 </div>
 <script src="app.js"></script>
 </body>

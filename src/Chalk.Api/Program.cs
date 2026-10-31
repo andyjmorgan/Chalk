@@ -22,8 +22,20 @@ builder.Services.AddSingleton<Embedder>();
 builder.Services.AddHttpClient("ollama", c => c.Timeout = TimeSpan.FromSeconds(60));
 builder.Services.AddHostedService<Sweeper>();
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddAuthentication(ApiKeyAuthHandler.SchemeName)
+var oauth = builder.Configuration.GetSection(OAuthOptions.Section).Get<OAuthOptions>() ?? new OAuthOptions();
+if (oauth.Enabled && string.IsNullOrWhiteSpace(oauth.Authority)) throw new InvalidOperationException("OAuth__Authority is required when OAuth__Enabled=true");
+builder.Services.AddSingleton(oauth);
+builder.Services.AddHttpClient("oauth", c => c.Timeout = TimeSpan.FromSeconds(20));
+var auth = builder.Services.AddAuthentication(o =>
+    {
+        o.DefaultScheme = ChalkAuth.Smart;
+        o.DefaultAuthenticateScheme = ChalkAuth.Smart;
+        o.DefaultChallengeScheme = ChalkAuth.Smart;
+        o.DefaultForbidScheme = ChalkAuth.Smart;
+    })
+    .AddPolicyScheme(ChalkAuth.Smart, ChalkAuth.Smart, o => o.ForwardDefaultSelector = ctx => ChalkAuth.Select(ctx, oauth.Enabled))
     .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthHandler>(ApiKeyAuthHandler.SchemeName, null);
+if (oauth.Enabled) auth.AddJwtBearer(o => ChalkAuth.ConfigureJwt(o, oauth));
 builder.Services.AddAuthorization();
 builder.Services.AddOpenApi();
 
@@ -62,6 +74,7 @@ app.UseAuthorization();
 
 app.MapGet("/healthz", () => Results.Json(new { ok = true, service = "chalk", version = "0.1.0" })).AllowAnonymous();
 app.MapOpenApi().AllowAnonymous();
+app.MapChalkOAuth(oauth);
 app.MapChalkRest();
 app.MapMcp("/mcp").RequireAuthorization();
 
