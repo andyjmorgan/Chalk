@@ -166,7 +166,7 @@ tbody tr:hover { background: var(--hover); }
 tbody tr.sel { background: var(--sel); }
 td.num { text-align: right; }
 td .sc { display: inline-block; margin-left: 8px; color: var(--muted); font-size: 12px; white-space: nowrap; }
-td .sc b { color: var(--fg); font-weight: 600; }
+td .sc b { color: var(--ink); font-weight: 600; }
 td.k { white-space: nowrap; }
 td.ell { max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .muted { color: var(--muted); }
