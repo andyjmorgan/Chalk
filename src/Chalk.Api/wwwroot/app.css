@@ -26,6 +26,9 @@ button.ghost { background: transparent; border-color: transparent; color: var(--
 button.ghost:hover { background: var(--elev); color: var(--ink); }
 button.danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 20%, transparent); background: color-mix(in srgb, var(--danger) 10%, transparent); }
 button.danger:hover { background: color-mix(in srgb, var(--danger) 20%, transparent); }
+button.icon.danger { width: 28px; height: 28px; border-radius: 8px; color: var(--muted); background: transparent; border-color: transparent; }
+button.icon.danger:hover { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
+button.icon.danger svg { width: 16px; height: 16px; }
 button.icon { width: 36px; height: 36px; padding: 0; background: transparent; border-color: transparent; color: var(--muted); border-radius: 12px; }
 button.icon:hover { background: var(--elev); color: var(--ink); }
 button.sm { height: 30px; padding: 0 10px; font-size: 12.5px; border-radius: 8px; }
