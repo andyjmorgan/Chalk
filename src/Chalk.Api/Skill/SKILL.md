@@ -62,6 +62,7 @@ Do not write prose, summaries of what you did, or lessons learned. If a value wa
 POST /api/v1/boards/{board}/records          { "records": [ { "value": {...}, "ttl": "2d" } ] }
 POST /api/v1/boards/{board}/records/lookup   { "keys": ["…"] }
 GET  /api/v1/boards/{board}/changes?since=2026-10-14T06:00:00Z&prefix=office/
+DELETE /api/v1/boards/{board}?confirm={board}      (owner only; drops every record)
 GET  /api/v1/boards/{board}/search?q=disk+full&prefix=office/&minScore=0.6
 GET  /api/v1/boards/{board}/records?prefix=2026-10-15/&filter=/status=warn
 ```

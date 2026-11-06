@@ -170,6 +170,29 @@ public sealed class Store(NpgsqlDataSource db, ILogger<Store> log)
         return await GetBoardAsync(conn, p, name, ct);
     }
 
+    /// <summary>Drop a board and everything under it (records, revisions, embeddings, events, shares cascade). Owner only; needs the delete scope.</summary>
+    public async Task<object> DeleteBoardAsync(Principal p, string name, CancellationToken ct)
+    {
+        p.RequireDelete();
+        if (!p.CanBoard(name)) throw ChalkException.Forbidden($"this key is not scoped to board {name}");
+        await using var conn = await db.OpenConnectionAsync(ct);
+        var b = await GetBoardAsync(conn, p, name, ct);
+        if (b.OwnerId != p.UserId && !p.Admin) throw ChalkException.Forbidden("only the board owner can delete it");
+        long live;
+        await using (var cnt = new NpgsqlCommand($"SELECT count(*) FROM records r WHERE {LiveWhere}", conn))
+        {
+            cnt.Parameters.AddWithValue("b", b.Id);
+            live = (long)(await cnt.ExecuteScalarAsync(ct))!;
+        }
+        await using (var del = new NpgsqlCommand("DELETE FROM boards WHERE id = @b", conn))
+        {
+            del.Parameters.AddWithValue("b", b.Id);
+            await del.ExecuteNonQueryAsync(ct);
+        }
+        await AuditAsync(conn, p.Display, "board.delete", new { name, live }, ct);
+        return new { deleted = name, live };
+    }
+
     private static async Task<BoardDef> GetBoardAsync(NpgsqlConnection conn, Principal p, string name, CancellationToken ct)
     {
         await using var cmd = new NpgsqlCommand($"SELECT {BoardColumns} FROM boards b LEFT JOIN shares s ON s.board_id = b.id AND s.user_id = @u WHERE b.name = @n AND (b.owner_id = @u OR s.user_id IS NOT NULL) LIMIT 1", conn);

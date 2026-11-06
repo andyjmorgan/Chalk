@@ -75,6 +75,11 @@ public static class RestEndpoints
         api.MapGet("/boards/{board}", async (HttpContext ctx, Store store, string board, CancellationToken ct) =>
             Ok(await store.DescribeBoardAsync(ctx.Principal(), board, ct)));
 
+        api.MapDelete("/boards/{board}", async (HttpContext ctx, Store store, string board, string? confirm, CancellationToken ct) =>
+        {
+            if (!string.Equals(confirm, board, StringComparison.Ordinal)) throw ChalkException.BadRequest("pass confirm=<board name> to delete a board and all its records");
+            return Ok(await store.DeleteBoardAsync(ctx.Principal(), board, ct));
+        });
         api.MapGet("/boards/{board}/tree", async (HttpContext ctx, Store store, string board, string? prefix, string? since, CancellationToken ct) =>
         {
             var p = ctx.Principal();
