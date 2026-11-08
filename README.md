@@ -5,11 +5,50 @@ Short-lived records for agents. Boards with a schema, upsert by key, history kep
 
 Chalk is not memory. It is the ledger an agent keeps between runs: what it saw, when, and what changed since.
 
+## What it does
+
+- **Boards** are named sets of JSON records under a JSON Schema. Each record is keyed by values inside it
+  (the board's key pointers, joined with `/`), revisioned on every change, and expires after the board's TTL
+  unless rewritten. Per-record `ttl`/`expiresAt` override the default.
+- **Upsert** is bulk and atomic. A changed value adds a revision and a `changed` event; an identical value only
+  refreshes expiry (`touched`). The response carries `counts: {created, changed, touched}` so a caller can see
+  whether its dedup is working.
+- **Key normalisers** (`url`, `lower`, `trim`) can be set per key pointer. The server applies them on every write
+  and on every key a caller passes to get, history or delete, so `https://WWW.x.com/a/?utm_source=y` and
+  `x.com/a` are one record. Setting one on an existing board re-keys its records.
+- **Dedup** is `get(keys[])`: absent keys are simply missing from the result.
+- **changes_since** replays created / changed / expired / deleted events from a timestamp.
+- **Search** is hybrid: Postgres full-text plus pgvector cosine similarity (Ollama embeddings), fused with
+  reciprocal rank fusion. Results carry the fused `score` (0–1) and, where available, the raw `similarity` and
+  text `rank`; `minScore` floors the vector side (default 0.6).
+- **Expiry sweep** tombstones expired records on a timer and emits `expired` events.
+- **UI**: browse boards as a key tree, inspect revisions and diffs, see what changed or is expiring, delete, and
+  mint API keys.
+
+### MCP tools (`/mcp`, Streamable HTTP)
+
+| tool | purpose |
+|---|---|
+| `list_boards`, `describe_board` | what exists; schema, key pointers, normalisers, TTL, counts |
+| `create_board`, `update_board` | create (idempotent on name); owner edits description, TTL, normalisers |
+| `upsert` | write one or many records, atomic |
+| `get` | latest live revision for each key; dedup in one call |
+| `list` | records under a key prefix, with `/pointer=value` filters and `since` |
+| `history` | revisions of a key with diffs |
+| `changes_since` | event replay |
+| `search` | hybrid text + vector search, scored |
+| `delete` | tombstone a key or prefix |
+
+The REST surface mirrors this under `/api/v1` (`GET|POST|PATCH|DELETE /boards[/{board}]`, `/records`,
+`/records/lookup`, `/records/{key}[/history]`, `/changes`, `/search`, `/tree`, `/keys`); OpenAPI at `/openapi/v1.json`.
+The skill that teaches a model when and how to use all of this is `src/Chalk.Api/Skill/SKILL.md`, served as
+`skill://chalk/SKILL.md`.
+
 - `src/Chalk.Api` — .NET 10. REST at `/api/v1`, MCP (Streamable HTTP) at `/mcp`, OpenAPI at `/openapi/v1.json`,
   the read+delete UI from `wwwroot/`, and the expiry sweep. Postgres (pgvector) schema in `Db/schema.sql`,
   applied idempotently at startup. The Chalk skill in `Skill/SKILL.md` is served as `skill://chalk/SKILL.md`.
-- `Dockerfile` — multi-stage build; image `192.168.0.140:5555/chalk/api`.
-- Deploy manifests live in the lab repo: `/mnt/lab/k3s/clusters/attic/applications/chalk/`.
+- `Dockerfile` — multi-stage build. `--build-arg CHALK_VERSION=<sha>` becomes the cache-buster on UI assets.
+- Deploy manifests live in a separate GitOps repo (k3s, Postgres with pgvector, Ollama for embeddings).
 
 ## Run locally
 
@@ -19,7 +58,7 @@ docker run -d --name chalk-pg --network chalk-test -e POSTGRES_USER=chalk -e POS
 docker build -t chalk-api:dev .
 docker run -d --name chalk-api --network chalk-test -p 18080:8080 \
   -e ConnectionStrings__Chalk='Host=chalk-pg;Username=chalk;Password=chalk;Database=chalk' \
-  -e Chalk__BootstrapApiKey=chk_localdev -e Embeddings__OllamaUrl=http://192.168.69.21:11434 chalk-api:dev
+  -e Chalk__BootstrapApiKey=chk_localdev -e Embeddings__OllamaUrl=http://<ollama-host>:11434 chalk-api:dev
 curl -s -H 'X-Api-Key: chk_localdev' localhost:18080/api/v1/me
 ```
 
@@ -44,5 +83,6 @@ Two credentials, one `Smart` scheme that picks by shape:
 
 The design note lives in Obsidian (`Personal/Projects/Chalk/Notes/Chalk — design.md`). Decided and built here:
 keys are paths from the board's pointer list; bulk atomic upsert with touch-on-identical; events table behind
-`changes_since`; Keycloak sign-in for people, user-minted API keys with `chalk:read|write|delete|admin` scopes for agents; UI is read-only plus delete plus key management.
+`changes_since`; Keycloak sign-in for people, user-minted API keys with `chalk:read|write|delete|admin` scopes for agents; UI is read-only plus delete plus key management;
+server-side key normalisers after a trailing-slash dedup miss in production.
 Deferred: shares, CLI, cross-board search, value editing, MCP Skills extension handshake.
