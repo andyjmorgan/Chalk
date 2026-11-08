@@ -300,7 +300,7 @@ public sealed class Store(NpgsqlDataSource db, ILogger<Store> log)
                 var nk = nb.NormalizeKey(old);
                 if (nk == old) continue;
                 if (existing.Contains(nk)) { conflicts.Add(old); continue; }
-                foreach (var table in new[] { "records", "embeddings", "events" })
+                foreach (var table in new[] { "records", "events" }) // embeddings follow records via ON UPDATE CASCADE
                 {
                     await using var mv = new NpgsqlCommand($"UPDATE {table} SET key = @nk WHERE board_id = @b AND key = @k", conn, tx);
                     mv.Parameters.AddWithValue("b", b.Id); mv.Parameters.AddWithValue("k", old); mv.Parameters.AddWithValue("nk", nk);

@@ -79,8 +79,16 @@ CREATE TABLE IF NOT EXISTS embeddings (
   truncated bool NOT NULL DEFAULT false,
   vector    vector(512) NOT NULL,
   PRIMARY KEY (board_id, key, revision),
-  FOREIGN KEY (board_id, key, revision) REFERENCES records(board_id, key, revision) ON DELETE CASCADE
+  FOREIGN KEY (board_id, key, revision) REFERENCES records(board_id, key, revision) ON DELETE CASCADE ON UPDATE CASCADE
 );
+-- Re-keying (board normalisers) renames records.key; the embedding row must follow.
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'embeddings_board_id_key_revision_fkey' AND confupdtype <> 'c') THEN
+    ALTER TABLE embeddings DROP CONSTRAINT embeddings_board_id_key_revision_fkey;
+    ALTER TABLE embeddings ADD CONSTRAINT embeddings_board_id_key_revision_fkey
+      FOREIGN KEY (board_id, key, revision) REFERENCES records(board_id, key, revision) ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS events (
   id            bigserial PRIMARY KEY,
