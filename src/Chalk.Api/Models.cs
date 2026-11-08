@@ -59,6 +59,87 @@ public sealed record BoardDef(
 {
     /// <summary>Pointer names without the leading slash, used as tree level labels and segment names.</summary>
     public string[] SegmentNames => KeyPointers.Select(p => p.TrimStart('/').Replace("~1", "/").Replace("~0", "~")).ToArray();
+    /// <summary>Per-pointer normaliser name (url / lower / trim) or null, parallel to <see cref="KeyPointers"/>.</summary>
+    public string?[] Normalizers { get; init; } = new string?[KeyPointers.Length];
+    public bool HasNormalizers => Normalizers.Any(n => n is not null);
+    /// <summary>Pointer → normaliser, only for pointers that have one. Empty when none.</summary>
+    public Dictionary<string, string> NormalizeMap => KeyPointers.Zip(Normalizers).Where(x => x.Second is not null).ToDictionary(x => x.First, x => x.Second!);
+
+    /// <summary>Applies the board's normalisers to a caller-supplied key (get / history / delete). Keys are split into segments on multi-pointer boards.</summary>
+    public string NormalizeKey(string key)
+    {
+        if (!HasNormalizers) return key;
+        if (KeyPointers.Length == 1) return KeyNormalize.Apply(Normalizers[0], key);
+        var parts = key.Split('/');
+        for (var i = 0; i < parts.Length && i < Normalizers.Length; i++)
+            parts[i] = KeyPath.EncodeSegment(KeyNormalize.Apply(Normalizers[i], KeyPath.DecodeSegment(parts[i])));
+        return string.Join('/', parts);
+    }
+
+    /// <summary>Parses the stored key_pointers JSON: ["/url"] or [{"pointer":"/url","normalize":"url"}] (forms may mix).</summary>
+    public static (string[] Pointers, string?[] Normalizers) ParseKeyPointers(string json)
+    {
+        var arr = JsonNode.Parse(json)!.AsArray();
+        var ps = new string[arr.Count]; var ns = new string?[arr.Count];
+        for (var i = 0; i < arr.Count; i++)
+        {
+            if (arr[i] is JsonObject o) { ps[i] = o["pointer"]!.GetValue<string>(); ns[i] = o["normalize"]?.GetValue<string>(); }
+            else ps[i] = arr[i]!.GetValue<string>();
+        }
+        return (ps, ns);
+    }
+
+    public static string SerializeKeyPointers(string[] pointers, string?[] normalizers)
+    {
+        if (normalizers.All(n => n is null)) return JsonSerializer.Serialize(pointers);
+        var arr = new JsonArray();
+        for (var i = 0; i < pointers.Length; i++)
+            arr.Add(normalizers[i] is null ? JsonValue.Create(pointers[i]) : new JsonObject { ["pointer"] = pointers[i], ["normalize"] = normalizers[i] });
+        return arr.ToJsonString();
+    }
+}
+
+/// <summary>Key normalisers. Applied by the server on upsert and on every key a caller passes, so one thing maps to one key regardless of surface form.</summary>
+public static class KeyNormalize
+{
+    public static readonly string[] Names = ["url", "lower", "trim"];
+    private static readonly HashSet<string> DropParams = new(StringComparer.OrdinalIgnoreCase) { "ref", "ref_src", "source", "fbclid", "gclid", "mc_cid", "mc_eid", "igshid" };
+
+    public static string Validate(string name) =>
+        Names.Contains(name) ? name : throw ChalkException.BadRequest($"normalize '{name}' must be one of {string.Join(", ", Names)}");
+
+    public static string Apply(string? name, string s) => name switch
+    {
+        null => s,
+        "trim" => Trim(s),
+        "lower" => Trim(s).ToLowerInvariant(),
+        "url" => Url(s),
+        _ => s,
+    };
+
+    private static string Trim(string s) => string.Join(' ', s.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+
+    /// <summary>https, lower-case host without www., default port dropped, fragment dropped, tracking params dropped, no trailing slash. Non-URLs pass through trimmed.</summary>
+    public static string Url(string s)
+    {
+        s = s.Trim();
+        var hasScheme = s.Contains("://", StringComparison.Ordinal);
+        if (!Uri.TryCreate(hasScheme ? s : "https://" + s, UriKind.Absolute, out var u) || (u.Scheme != "http" && u.Scheme != "https") || string.IsNullOrEmpty(u.Host)) return s;
+        var host = u.IdnHost.ToLowerInvariant();
+        if (host.StartsWith("www.", StringComparison.Ordinal)) host = host[4..];
+        var sb = new StringBuilder("https://").Append(host);
+        if (!u.IsDefaultPort && !(u.Scheme == "http" && u.Port == 80)) sb.Append(':').Append(u.Port);
+        var path = u.AbsolutePath;
+        if (path.Length > 1 && path.EndsWith('/')) path = path.TrimEnd('/');
+        if (path != "/") sb.Append(path);
+        if (u.Query.Length > 1)
+        {
+            var kept = u.Query[1..].Split('&', StringSplitOptions.RemoveEmptyEntries)
+                .Where(kv => { var k = kv.Split('=', 2)[0]; return !k.StartsWith("utm_", StringComparison.OrdinalIgnoreCase) && !DropParams.Contains(k); }).ToArray();
+            if (kept.Length > 0) sb.Append('?').Append(string.Join('&', kept));
+        }
+        return sb.ToString();
+    }
 }
 
 public sealed record UpsertItem(JsonNode Value, TimeSpan? Ttl, DateTimeOffset? ExpiresAt, DateTimeOffset? ObservedAt);
@@ -153,13 +234,13 @@ public static class KeyPath
     public static string DecodeSegment(string s) => s.Replace("%2F", "/").Replace("%25", "%");
 
     /// <summary>Derives the record key from the value. Single pointer = raw value; several = encoded segments joined by '/'.</summary>
-    public static string Derive(JsonNode value, string[] pointers, int? index = null)
+    public static string Derive(JsonNode value, string[] pointers, int? index = null, string?[]? normalizers = null)
     {
         var parts = new string[pointers.Length];
         for (var i = 0; i < pointers.Length; i++)
         {
             var n = Resolve(value, pointers[i]) ?? throw new ChalkException(400, "bad_request", $"key pointer {pointers[i]} is missing from the value", pointers[i], index);
-            var text = ScalarText(n, pointers[i]);
+            var text = KeyNormalize.Apply(normalizers?[i], ScalarText(n, pointers[i]));
             if (text.Length == 0) throw new ChalkException(400, "bad_request", $"key pointer {pointers[i]} is empty", pointers[i], index);
             parts[i] = pointers.Length == 1 ? text : EncodeSegment(text);
         }

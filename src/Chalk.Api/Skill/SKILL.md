@@ -43,7 +43,13 @@ Do not write prose, summaries of what you did, or lessons learned. If a value wa
 ## Keys
 
 - Derive nothing yourself: the server derives the key from the value using the board's pointers.
-- Keep key fields stable and canonical (lower-case hosts, normalised URLs) so the same thing maps to the same key.
+- A key is an exact string match. Give any pointer with many surface forms a **normaliser** on the board
+  (`create_board … normalize: {"/url": "url"}` or `update_board`): `url` (https, lower-case host, no `www.`,
+  no fragment, no `utm_*`/`ref`/`fbclid`-style params, no trailing slash), `lower`, `trim`. The server applies it
+  on every write and on every key you pass to `get`, `history` and `delete`, so you can pass URLs as found.
+  Without one, keep key fields canonical yourself.
+- `upsert` returns `counts: { created, changed, touched }`. On a dedup board a run that expected mostly
+  `touched` but got all `created` has a key mismatch; say so in the run summary.
 - Prefix queries (`list`, `search`, `changes_since`, `delete`) take a key path prefix such as `office/` or `2026-10-15/`.
 
 ## Per-record expiry

@@ -9,6 +9,17 @@ public static class RestEndpoints
     private static IResult Ok(object? data, string? cursor = null, object? meta = null) =>
         Results.Json(new { data, cursor, meta }, Json.Options);
 
+    public static Dictionary<string, string>? ParseNormalize(JsonNode? n) =>
+        n is JsonObject o ? o.ToDictionary(kv => kv.Key, kv => kv.Value?.GetValue<string>() ?? throw ChalkException.BadRequest($"normalize['{kv.Key}'] must be a normaliser name")) : null;
+
+    /// <summary>created / changed / touched tallies so a caller sees at a glance whether its dedup is working (e.g. 19 created where ~15 touched were expected).</summary>
+    public static Dictionary<string, int> UpsertCounts(IEnumerable<UpsertResult> results)
+    {
+        var d = new Dictionary<string, int> { ["created"] = 0, ["changed"] = 0, ["touched"] = 0 };
+        foreach (var r in results) d[r.Kind] = d.GetValueOrDefault(r.Kind) + 1;
+        return d;
+    }
+
     public static IReadOnlyList<UpsertItem> ParseUpsertBody(JsonNode? body)
     {
         if (body is not JsonObject o) throw ChalkException.BadRequest("body must be a JSON object with records[] or value");
@@ -65,15 +76,29 @@ public static class RestEndpoints
         {
             var o = body as JsonObject ?? throw ChalkException.BadRequest("body must be an object");
             var name = o["name"]?.GetValue<string>() ?? throw ChalkException.BadRequest("name is required");
-            var key = o["key"] is JsonArray ka ? ka.Select(x => x!.GetValue<string>()).ToArray() : o["key"] is JsonValue kv ? [kv.GetValue<string>()] : throw ChalkException.BadRequest("key must be a list of JSON pointers");
+            // key: ["/url"] or [{"pointer":"/url","normalize":"url"}]; normalize may also be given as a map { "/url": "url" }.
+            var normalize = ParseNormalize(o["normalize"]);
+            string[] key;
+            if (o["key"] is JsonArray ka)
+                key = ka.Select(x => { if (x is JsonObject ko) { var ptr = ko["pointer"]?.GetValue<string>() ?? throw ChalkException.BadRequest("key item needs pointer"); if (ko["normalize"] is JsonValue nv) (normalize ??= new())[ptr] = nv.GetValue<string>(); return ptr; } return x!.GetValue<string>(); }).ToArray();
+            else if (o["key"] is JsonValue kv) key = [kv.GetValue<string>()];
+            else throw ChalkException.BadRequest("key must be a list of JSON pointers");
             var search = o["search"] is JsonObject so && so["fields"] is JsonArray sf ? sf.Select(x => x!.GetValue<string>()).ToArray() : null;
             var b = await store.CreateBoardAsync(ctx.Principal(), name, o["description"]?.GetValue<string>(), o["schema"], key, o["ttl"]?.GetValue<string>(),
-                o["maxRevisions"]?.GetValue<int>(), search, o["embed"], o["maxValueBytes"]?.GetValue<int>(), ct);
+                o["maxRevisions"]?.GetValue<int>(), search, o["embed"], o["maxValueBytes"]?.GetValue<int>(), ct, normalize);
             return Results.Json(new { data = await store.DescribeBoardAsync(ctx.Principal(), b.Name, ct) }, Json.Options, statusCode: 201);
         });
 
         api.MapGet("/boards/{board}", async (HttpContext ctx, Store store, string board, CancellationToken ct) =>
             Ok(await store.DescribeBoardAsync(ctx.Principal(), board, ct)));
+
+        // Owner-only edit. normalize: { "/url": "url" } re-keys existing records; ttl: "7d" or null to clear.
+        api.MapPatch("/boards/{board}", async (HttpContext ctx, Store store, string board, [FromBody] JsonNode body, CancellationToken ct) =>
+        {
+            var o = body as JsonObject ?? throw ChalkException.BadRequest("body must be an object");
+            var clearTtl = o.ContainsKey("ttl") && o["ttl"] is null;
+            return Ok(await store.UpdateBoardAsync(ctx.Principal(), board, o["description"]?.GetValue<string>(), o["ttl"]?.GetValue<string>(), clearTtl, ParseNormalize(o["normalize"]), ct));
+        });
 
         api.MapDelete("/boards/{board}", async (HttpContext ctx, Store store, string board, string? confirm, CancellationToken ct) =>
         {
@@ -103,7 +128,7 @@ public static class RestEndpoints
             var p = ctx.Principal();
             var b = await store.GetBoardAsync(p, board, ct);
             var results = await store.UpsertAsync(p, b, ParseUpsertBody(body), embedder, ct);
-            return Ok(results, null, new { board = b.Name, count = results.Count });
+            return Ok(results, null, new { board = b.Name, count = results.Count, counts = UpsertCounts(results) });
         });
 
         api.MapPost("/boards/{board}/records/lookup", async (HttpContext ctx, Store store, string board, [FromBody] JsonNode body, CancellationToken ct) =>
@@ -117,9 +142,9 @@ public static class RestEndpoints
 
         api.MapGet("/boards/{board}/records/{key}", async (HttpContext ctx, Store store, string board, string key, CancellationToken ct) =>
         {
-            key = Uri.UnescapeDataString(key);
             var p = ctx.Principal();
             var b = await store.GetBoardAsync(p, board, ct);
+            key = b.NormalizeKey(Uri.UnescapeDataString(key));
             var found = await store.GetManyAsync(p, b, [key], ct);
             return found.TryGetValue(key, out var r) ? Ok(Envelope(r)) : throw ChalkException.NotFound($"board {b.Name} has no key {key}");
         });

@@ -233,7 +233,7 @@
         h('div', { class: 'stat' }, h('b', {}, b.counts.changedToday), h('span', {}, 'changed today')),
         h('div', { class: 'stat' }, h('b', { class: b.counts.expiring24h ? 'soon' : '' }, b.counts.expiring24h), h('span', {}, 'expiring 24h'))),
       h('div', { class: 'foot' },
-        h('span', { class: 'mono' }, b.key.join(' / '), b.ttl ? ` · ttl ${b.ttl}` : ' · keep'),
+        h('span', { class: 'mono' }, b.key.map((k) => b.normalize?.[k] ? `${k}:${b.normalize[k]}` : k).join(' / '), b.ttl ? ` · ttl ${b.ttl}` : ' · keep'),
         b.lastWrite ? h('span', {}, 'last write ', timeEl(b.lastWrite.at), ' by ', h('span', { class: 'mono' }, b.lastWrite.writer)) : h('span', {}, 'never written')))))));
   }
 

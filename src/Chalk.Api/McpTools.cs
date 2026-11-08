@@ -23,6 +23,7 @@ public sealed class ChalkTools(Store store, Embedder embedder, IHttpContextAcces
     [McpServerTool(Name = "create_board", Title = "Create board")]
     [Description("Create a board: a named set of keyed, expiring JSON records under a JSON Schema. Idempotent on name. " +
                  "key is a list of JSON pointers into the value; their values join with '/' into the record key (one pointer = raw value, several = path like office/office-1/disk). " +
+                 "normalize maps a key pointer to url | lower | trim; the server then applies it on every write and lookup, so https://WWW.x.com/a/?utm_source=y and x.com/a are one key. Use url for any URL key. " +
                  "ttl like 7d/14d/90d is the default lifetime from last write (omit to keep forever). search.fields get full-text weight; embed.fields turns on vector search for near-duplicates.")]
     public Task<object> CreateBoard(
         [Description("Slug: lowercase letters, digits, - and _.")] string name,
@@ -33,13 +34,24 @@ public sealed class ChalkTools(Store store, Embedder embedder, IHttpContextAcces
         [Description("Pointers given full-text weight A, e.g. [\"/title\"].")] string[]? searchFields = null,
         [Description("Pointers to embed for vector search, e.g. [\"/title\",\"/summary\"]. Off when omitted.")] string[]? embedFields = null,
         [Description("Revisions kept per key. Default 50.")] int? maxRevisions = null,
+        [Description("Key pointer → normaliser, e.g. {\"/url\": \"url\"} or {\"/repo\": \"lower\"}. Names: url, lower, trim.")] Dictionary<string, string>? normalize = null,
         CancellationToken ct = default)
     => Run(async () =>
     {
         var embed = embedFields is { Length: > 0 } ? new JsonObject { ["fields"] = new JsonArray(embedFields.Select(f => (JsonNode)f).ToArray()) } : null;
-        var b = await store.CreateBoardAsync(P, name, description, Node(schema), key, ttl, maxRevisions, searchFields, embed, null, ct);
+        var b = await store.CreateBoardAsync(P, name, description, Node(schema), key, ttl, maxRevisions, searchFields, embed, null, ct, normalize);
         return await store.DescribeBoardAsync(P, b.Name, ct);
     });
+
+    [McpServerTool(Name = "update_board", Title = "Update board")]
+    [Description("Owner-only edit of a board's description, ttl or key normalisers. Setting normalize re-keys the existing records; keys that would collide are left alone and listed in conflicts.")]
+    public Task<object> UpdateBoard(
+        [Description("Board name.")] string board,
+        [Description("New one-line description.")] string? description = null,
+        [Description("New default lifetime, e.g. 7d.")] string? ttl = null,
+        [Description("Key pointer → normaliser (url | lower | trim), e.g. {\"/url\": \"url\"}.")] Dictionary<string, string>? normalize = null,
+        CancellationToken ct = default)
+    => Run(() => store.UpdateBoardAsync(P, board, description, ttl, false, normalize, ct));
 
     [McpServerTool(Name = "describe_board", Title = "Describe board", ReadOnly = true)]
     [Description("Schema, key pointers, TTL, counts and search settings for a board. Call before the first write to a board you have not used.")]
@@ -53,8 +65,8 @@ public sealed class ChalkTools(Store store, Embedder embedder, IHttpContextAcces
     [McpServerTool(Name = "upsert", Title = "Upsert records")]
     [Description("Write one or many records to a board. Each item is { value, ttl?, expiresAt?, observedAt? }. The key is derived from the value by the board's key pointers. " +
                  "A changed value writes a new revision and a 'changed' event; an identical value just refreshes expiry ('touched'). The batch is atomic: one schema violation fails the whole call with the item index. " +
-                 "Returns { key, revision, expiresAt, kind } per item.")]
-    public Task<List<UpsertResult>> Upsert(
+                 "Returns { counts: { created, changed, touched }, results: [{ key, revision, expiresAt, kind }] }. A run that expected mostly touched but got all created has a key mismatch: check the board's normalize setting.")]
+    public Task<object> Upsert(
         [Description("Board name.")] string board,
         [Description("Array of { value: object, ttl?: '2d', expiresAt?: ISO-8601, observedAt?: ISO-8601 }.")] JsonElement records,
         CancellationToken ct = default)
@@ -62,7 +74,8 @@ public sealed class ChalkTools(Store store, Embedder embedder, IHttpContextAcces
     {
         if (records.ValueKind != JsonValueKind.Array) throw ChalkException.BadRequest("records must be an array");
         var b = await store.GetBoardAsync(P, board, ct);
-        return await store.UpsertAsync(P, b, RestEndpoints.ParseUpsertItems(JsonNode.Parse(records.GetRawText())!.AsArray()), embedder, ct);
+        var results = await store.UpsertAsync(P, b, RestEndpoints.ParseUpsertItems(JsonNode.Parse(records.GetRawText())!.AsArray()), embedder, ct);
+        return (object)new { counts = RestEndpoints.UpsertCounts(results), results };
     });
 
     [McpServerTool(Name = "get", Title = "Get records by key", ReadOnly = true)]

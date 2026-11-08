@@ -148,16 +148,17 @@ public sealed class Store(NpgsqlDataSource db, ILogger<Store> log)
     {
         var search = JsonNode.Parse(r.GetString(8))?.AsObject() ?? new JsonObject();
         var embedJson = r.IsDBNull(9) ? null : JsonNode.Parse(r.GetString(9))?.AsObject();
+        var (pointers, normalizers) = BoardDef.ParseKeyPointers(r.GetString(5));
         return new BoardDef(
             r.GetGuid(0), r.GetString(1), r.GetString(2), r.GetString(3), r.GetString(4),
-            JsonNode.Parse(r.GetString(5))!.AsArray().Select(x => x!.GetValue<string>()).ToArray(),
+            pointers,
             r.IsDBNull(6) ? null : r.GetFieldValue<TimeSpan>(6), r.GetInt32(7),
             new SearchConfig(search["fields"] is JsonArray sf ? sf.Select(x => x!.GetValue<string>()).ToArray() : []),
             embedJson is null ? null : new EmbedConfig(
                 embedJson["fields"] is JsonArray ef ? ef.Select(x => x!.GetValue<string>()).ToArray() : [],
                 embedJson["model"]?.GetValue<string>() ?? "", embedJson["dims"]?.GetValue<int>() ?? 512,
                 embedJson["minScore"]?.GetValue<double>() ?? EmbedConfig.DefaultMinScore),
-            r.GetInt32(10), r.GetInt64(11), r.GetFieldValue<DateTime>(12), r.GetFieldValue<DateTime>(13));
+            r.GetInt32(10), r.GetInt64(11), r.GetFieldValue<DateTime>(12), r.GetFieldValue<DateTime>(13)) { Normalizers = normalizers };
     }
 
     private const string BoardColumns = "b.id, b.owner_id, b.name, b.description, b.schema::text, b.key_pointers::text, b.ttl, b.max_revisions, b.search::text, b.embed::text, b.max_value_bytes, b.size_cap, b.created_at, b.updated_at";
@@ -203,7 +204,7 @@ public sealed class Store(NpgsqlDataSource db, ILogger<Store> log)
         return ReadBoard(r);
     }
 
-    public async Task<BoardDef> CreateBoardAsync(Principal p, string name, string? description, JsonNode? schema, string[] keyPointers, string? ttl, int? maxRevisions, string[]? searchFields, JsonNode? embed, int? maxValueBytes, CancellationToken ct)
+    public async Task<BoardDef> CreateBoardAsync(Principal p, string name, string? description, JsonNode? schema, string[] keyPointers, string? ttl, int? maxRevisions, string[]? searchFields, JsonNode? embed, int? maxValueBytes, CancellationToken ct, Dictionary<string, string>? normalize = null)
     {
         p.RequireWrite();
         if (string.IsNullOrWhiteSpace(name) || !name.All(c => char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c) || c == '-' || c == '_'))
@@ -211,6 +212,7 @@ public sealed class Store(NpgsqlDataSource db, ILogger<Store> log)
         if (!p.CanBoard(name)) throw ChalkException.Forbidden($"this key is not scoped to board {name}");
         if (keyPointers is null || keyPointers.Length == 0) throw ChalkException.BadRequest("key must list at least one JSON pointer");
         foreach (var kp in keyPointers) if (!kp.StartsWith('/')) throw ChalkException.BadRequest($"key pointer '{kp}' must start with /");
+        var normalizers = ResolveNormalizers(keyPointers, normalize);
         var schemaNode = schema ?? JsonNode.Parse("""{"type":"object"}""")!;
         try { JsonSchema.FromText(schemaNode.ToJsonString()); }
         catch (Exception e) { throw ChalkException.BadRequest($"schema is not valid JSON Schema: {e.Message}"); }
@@ -240,7 +242,7 @@ public sealed class Store(NpgsqlDataSource db, ILogger<Store> log)
             cmd.Parameters.AddWithValue("n", name);
             cmd.Parameters.AddWithValue("d", description ?? "");
             cmd.Parameters.Add(new NpgsqlParameter("s", NpgsqlDbType.Jsonb) { Value = schemaNode.ToJsonString() });
-            cmd.Parameters.Add(new NpgsqlParameter("k", NpgsqlDbType.Jsonb) { Value = JsonSerializer.Serialize(keyPointers) });
+            cmd.Parameters.Add(new NpgsqlParameter("k", NpgsqlDbType.Jsonb) { Value = BoardDef.SerializeKeyPointers(keyPointers, normalizers) });
             cmd.Parameters.Add(new NpgsqlParameter("ttl", NpgsqlDbType.Interval) { Value = ttlSpan.HasValue ? ttlSpan.Value : DBNull.Value });
             cmd.Parameters.AddWithValue("mr", maxRevisions ?? 50);
             cmd.Parameters.Add(new NpgsqlParameter("search", NpgsqlDbType.Jsonb) { Value = JsonSerializer.Serialize(new { fields = searchFields ?? [] }) });
@@ -249,6 +251,76 @@ public sealed class Store(NpgsqlDataSource db, ILogger<Store> log)
             if (await cmd.ExecuteNonQueryAsync(ct) == 1) await AuditAsync(conn, p.Display, "board.create", new { name }, ct);
         }
         return await GetBoardAsync(conn, p, name, ct);
+    }
+
+    private static string?[] ResolveNormalizers(string[] keyPointers, Dictionary<string, string>? normalize)
+    {
+        var ns = new string?[keyPointers.Length];
+        if (normalize is null) return ns;
+        foreach (var (ptr, name) in normalize)
+        {
+            var i = Array.IndexOf(keyPointers, ptr);
+            if (i < 0) throw ChalkException.BadRequest($"normalize: '{ptr}' is not one of the board's key pointers");
+            ns[i] = KeyNormalize.Validate(name);
+        }
+        return ns;
+    }
+
+    /// <summary>Owner-only board edit: description, ttl and key normalisers. Setting normalisers re-keys existing records (records, embeddings, events);
+    /// a record whose normalised key collides with another live key is left as is and reported in <c>conflicts</c>.</summary>
+    public async Task<object> UpdateBoardAsync(Principal p, string name, string? description, string? ttl, bool clearTtl, Dictionary<string, string>? normalize, CancellationToken ct)
+    {
+        p.RequireWrite();
+        if (!p.CanBoard(name)) throw ChalkException.Forbidden($"this key is not scoped to board {name}");
+        await using var conn = await db.OpenConnectionAsync(ct);
+        var b = await GetBoardAsync(conn, p, name, ct);
+        if (b.OwnerId != p.UserId && !p.Admin) throw ChalkException.Forbidden("only the board owner can change it");
+        await using var tx = await conn.BeginTransactionAsync(ct);
+        var rekeyed = 0; var conflicts = new List<string>();
+        if (normalize is not null)
+        {
+            var normalizers = ResolveNormalizers(b.KeyPointers, normalize);
+            var nb = b with { Normalizers = normalizers };
+            await using (var up = new NpgsqlCommand("UPDATE boards SET key_pointers = @k, updated_at = now() WHERE id = @b", conn, tx))
+            {
+                up.Parameters.AddWithValue("b", b.Id);
+                up.Parameters.Add(new NpgsqlParameter("k", NpgsqlDbType.Jsonb) { Value = BoardDef.SerializeKeyPointers(b.KeyPointers, normalizers) });
+                await up.ExecuteNonQueryAsync(ct);
+            }
+            var keys = new List<string>();
+            await using (var sel = new NpgsqlCommand("SELECT DISTINCT key FROM records WHERE board_id = @b", conn, tx))
+            {
+                sel.Parameters.AddWithValue("b", b.Id);
+                await using var r = await sel.ExecuteReaderAsync(ct);
+                while (await r.ReadAsync(ct)) keys.Add(r.GetString(0));
+            }
+            var existing = new HashSet<string>(keys, StringComparer.Ordinal);
+            foreach (var old in keys)
+            {
+                var nk = nb.NormalizeKey(old);
+                if (nk == old) continue;
+                if (existing.Contains(nk)) { conflicts.Add(old); continue; }
+                foreach (var table in new[] { "records", "embeddings", "events" })
+                {
+                    await using var mv = new NpgsqlCommand($"UPDATE {table} SET key = @nk WHERE board_id = @b AND key = @k", conn, tx);
+                    mv.Parameters.AddWithValue("b", b.Id); mv.Parameters.AddWithValue("k", old); mv.Parameters.AddWithValue("nk", nk);
+                    await mv.ExecuteNonQueryAsync(ct);
+                }
+                existing.Remove(old); existing.Add(nk); rekeyed++;
+            }
+        }
+        if (description is not null || ttl is not null || clearTtl)
+        {
+            await using var up = new NpgsqlCommand("UPDATE boards SET description = coalesce(@d, description), ttl = CASE WHEN @clear THEN NULL ELSE coalesce(@ttl, ttl) END, updated_at = now() WHERE id = @b", conn, tx);
+            up.Parameters.AddWithValue("b", b.Id);
+            up.Parameters.Add(new NpgsqlParameter("d", NpgsqlDbType.Text) { Value = (object?)description ?? DBNull.Value });
+            up.Parameters.AddWithValue("clear", clearTtl);
+            up.Parameters.Add(new NpgsqlParameter("ttl", NpgsqlDbType.Interval) { Value = ttl is null ? DBNull.Value : Durations.Parse(ttl, "ttl") });
+            await up.ExecuteNonQueryAsync(ct);
+        }
+        await AuditAsync(conn, p.Display, "board.update", new { name, normalize, rekeyed, conflicts = conflicts.Count, description = description is not null, ttl }, ct);
+        await tx.CommitAsync(ct);
+        return new { board = await DescribeBoardAsync(p, name, ct), rekeyed, conflicts };
     }
 
     public async Task<List<object>> ListBoardsAsync(Principal p, CancellationToken ct)
@@ -278,7 +350,7 @@ public sealed class Store(NpgsqlDataSource db, ILogger<Store> log)
             var stale = b.Ttl.HasValue && (lastWrite is null || DateTime.UtcNow - lastWrite.Value > b.Ttl.Value);
             list.Add(new
             {
-                name = b.Name, description = b.Description, key = b.KeyPointers, ttl = b.Ttl is null ? null : Durations.Format(b.Ttl.Value),
+                name = b.Name, description = b.Description, key = b.KeyPointers, normalize = b.HasNormalizers ? b.NormalizeMap : null, ttl = b.Ttl is null ? null : Durations.Format(b.Ttl.Value),
                 counts = new { live = r.GetInt64(14), writesToday = r.GetInt64(15), changedToday = r.GetInt64(16), expiring24h = r.GetInt64(17) },
                 lastWrite = lastWrite is null ? null : new { at = lastWrite, writer = r.IsDBNull(19) ? null : r.GetString(19) },
                 stale,
@@ -306,7 +378,7 @@ public sealed class Store(NpgsqlDataSource db, ILogger<Store> log)
         await r.ReadAsync(ct);
         return new
         {
-            name = b.Name, owner = $"user:{b.OwnerId}", description = b.Description, key = b.KeyPointers, segments = b.SegmentNames,
+            name = b.Name, owner = $"user:{b.OwnerId}", description = b.Description, key = b.KeyPointers, normalize = b.HasNormalizers ? b.NormalizeMap : null, segments = b.SegmentNames,
             ttl = b.Ttl is null ? null : Durations.Format(b.Ttl.Value), maxRevisions = b.MaxRevisions,
             schema = JsonNode.Parse(b.SchemaJson),
             search = new { fields = b.Search.Fields },
@@ -338,7 +410,7 @@ public sealed class Store(NpgsqlDataSource db, ILogger<Store> log)
                 var (msg, where) = FirstError(res);
                 throw new ChalkException(400, "schema_violation", $"record {i}: {msg}", where, i);
             }
-            keyed.Add((KeyPath.Derive(it.Value, b.KeyPointers, i), it, BuildSearchA(it.Value, b.Search.Fields)));
+            keyed.Add((KeyPath.Derive(it.Value, b.KeyPointers, i, b.Normalizers), it, BuildSearchA(it.Value, b.Search.Fields)));
         }
 
         var results = new List<UpsertResult>(items.Count);
@@ -501,6 +573,7 @@ public sealed class Store(NpgsqlDataSource db, ILogger<Store> log)
     {
         p.RequireRead();
         if (keys.Length > 1000) throw ChalkException.BadRequest("at most 1000 keys per call");
+        if (b.HasNormalizers) keys = keys.Select(b.NormalizeKey).ToArray();
         await using var conn = await db.OpenConnectionAsync(ct);
         await using var cmd = new NpgsqlCommand($"SELECT {RecordCols} FROM records r WHERE {LiveWhere} AND r.key = ANY(@keys)", conn);
         cmd.Parameters.AddWithValue("b", b.Id);
@@ -608,6 +681,7 @@ public sealed class Store(NpgsqlDataSource db, ILogger<Store> log)
     public async Task<List<RevisionRow>> HistoryAsync(Principal p, BoardDef b, string key, int limit, CancellationToken ct)
     {
         p.RequireRead();
+        key = b.NormalizeKey(key);
         await using var conn = await db.OpenConnectionAsync(ct);
         await using var cmd = new NpgsqlCommand("SELECT revision, value::text, observed_at, written_at, expires_at, writer, tombstone FROM records WHERE board_id = @b AND key = @k ORDER BY revision DESC LIMIT @lim", conn);
         cmd.Parameters.AddWithValue("b", b.Id);
@@ -772,6 +846,7 @@ public sealed class Store(NpgsqlDataSource db, ILogger<Store> log)
     {
         p.RequireDelete();
         if (string.IsNullOrEmpty(key) == string.IsNullOrEmpty(prefix)) throw ChalkException.BadRequest("pass exactly one of key or prefix");
+        if (key is not null) key = b.NormalizeKey(key);
         await using var conn = await db.OpenConnectionAsync(ct);
         await using var tx = await conn.BeginTransactionAsync(ct);
         var cur = new List<(string Key, int Rev, string Value)>();
