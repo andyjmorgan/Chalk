@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 916 883" role="img" aria-label="Chalk — light icon">
+  <defs>
+    <linearGradient id="chip" x1="1" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#A39F95"/><stop offset="1" stop-color="#D8CDBB"/>
+    </linearGradient>
+  </defs>
+  <rect width="916" height="883" rx="182" fill="#FAFAF9"/>
+  <path d="M305 0 H622 V46 C622 77 597 102 566 102 H361 C330 102 305 77 305 46 Z" fill="url(#chip)"/>
+  <path d="M658 319 A219 219 0 1 0 658 583" fill="none" stroke="#172033" stroke-width="94" stroke-linecap="butt"/>
+</svg>

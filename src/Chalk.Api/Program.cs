@@ -43,7 +43,14 @@ builder.Services.AddOpenApi();
 var publicUrl = builder.Configuration["Chalk:PublicUrl"] ?? "https://chalk.andrewmorgan.ai";
 builder.Services.AddMcpServer(o =>
     {
-        o.ServerInfo = new Implementation { Name = "Chalk", Title = "Chalk", Version = "0.1.0", WebsiteUrl = publicUrl };
+        o.ServerInfo = new Implementation { Name = "Chalk", Title = "Chalk", Version = "0.1.0", WebsiteUrl = publicUrl,
+            Icons = (from theme in new[] { "light", "dark" }
+                     from size in new[] { 16, 32, 64, 128, 256, 512 }
+                     select new Icon {
+                         Source = $"https://s3.donkeywork.dev/mcp-icons/chalk-{theme}-v1-{size}.png",
+                         MimeType = "image/png", Sizes = [$"{size}x{size}"], Theme = theme
+                     }).ToList()
+        };
         o.ServerInstructions =
             "Chalk holds short-lived records for agents. A board is a named set of JSON records under a schema; each record is keyed by values " +
             "inside it (the board's key pointers, joined with '/'), revisioned on every change, and expires after the board's TTL unless rewritten. " +
